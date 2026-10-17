@@ -50,6 +50,16 @@ input[type=checkbox] { width: 21px; height: 21px; flex: none; margin: 0; accent-
 .game-card { position: relative; width: 100%; min-width: 0; aspect-ratio: 1.96; min-height: 185px; overflow: hidden; border-radius: 12px; background: #252d3e; isolation: isolate; border: 1px solid #414b5a55; }
 .cover-button { display: block; width: 100%; height: 100%; padding: 0; border-radius: inherit; background: #252d3e; position: absolute; inset: 0; }
 .cover-button img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.media-frame { width: 100%; height: 100%; min-width: 0; position: relative; }
+.media-frame img[hidden] { display: none; }
+.media-frame>.cover-fallback { min-height: 180px; padding: 24px; flex-direction: column; gap: 12px; }
+.detail-gallery>.media-frame { flex: 0 0 100%; aspect-ratio: 16/9; height: auto; scroll-snap-align: start; }
+.detail-gallery>.media-frame img { height: 100%; }
+.upcoming-note { font-size: 12px; line-height: 1.7; color: #c7d4ec; margin: 8px 1px 14px; }
+#upcoming-section { margin-top: 24px; }
+#upcoming-section[hidden] { display: none; }
+#upcoming-items .card-meta { flex-wrap: wrap; }
+#upcoming-items .deadline { white-space: normal; }
 .cover-fallback { display: flex; height: 100%; align-items: center; justify-content: center; padding: 28px 18px 72px; background: linear-gradient(140deg, #394665, #202736); color: #dbe3f3; font-size: 16px; }
 .cover-button img[hidden] { display: none; }
 .cover-button:focus-visible { outline-offset: -4px; }

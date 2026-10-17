@@ -160,6 +160,10 @@ function runPocketTask(task) {
     if (finished || busy || !document.body) return;
     busy = true;
     try {
+      if (task.mode === 'claim' && !D.queue([task.item], [task.item.key]).length) {
+        finish('blocked', {message: '该商品尚未开始限免、活动已结束或已经拥有，未提交订单'});
+        return;
+      }
       const isTop = window === window.top;
       const fab = location.hostname === 'www.fab.com';
       const epic = location.hostname === 'store.epicgames.com';

@@ -8,9 +8,9 @@ function game(overrides = {}) {
       startDate:'2026-10-15T15:00:00Z',endDate:'2026-10-22T15:00:00Z',discountSetting:{discountPercentage:0}}]}]},...overrides};
 }
 const pc = item => ({data:{Catalog:{searchStore:{elements:[item]}}}});
-test('PC: only an active free promotion is listed', () => {
+test('PC: active and announced future promotions are listed', () => {
   assert.equal(D.parsePc(pc(game()), now).length, 1);
-  assert.equal(D.parsePc(pc(game()), Date.parse('2026-10-14')).length, 0);
+  assert.equal(D.parsePc(pc(game()), Date.parse('2026-10-14'))[0].availability, 'upcoming');
   assert.equal(D.parsePc(pc(game()), Date.parse('2026-10-22T15:00:00Z')).length, 0);
 });
 test('PC: paid items, permanent free items, and partial discounts are excluded', () => {
@@ -55,10 +55,10 @@ test('selection skips owned entries and ignores missing/duplicate keys', () => {
   const items = [{key:'a',status:'owned'},{key:'b',status:'unknown'},{key:'c',status:'unowned'}];
   assert.deepEqual(D.queue(items,['a','b','b','unknown']).map(i=>i.key), ['b']);
 });
-test('Android: future and expired free price entries are not offered', () => {
+test('Android: announced future offers are visible but expired entries are excluded', () => {
   const purchase = {purchaseType:'Claim',price:{decimalPrice:0},purchaseStateEffectiveDate:'2026-10-17T00:00:00Z'};
   const data = {data:[{type:'freeGame',offers:[{content:{title:'Test Mobile',mapping:{slug:'test-mobile'},purchase:[purchase]}}]}]};
-  assert.equal(D.parseMobile(data,now).length,0);
+  assert.equal(D.parseMobile(data,now)[0].availability,'upcoming');
   purchase.purchaseStateEffectiveDate='2026-10-15T00:00:00Z';
   purchase.discount={discountEndDate:'2026-10-16T12:00:00Z'};
   assert.equal(D.parseMobile(data,now).length,0);
@@ -84,7 +84,7 @@ test('image URLs accept official HTTPS CDNs and reject deceptive hosts and activ
 });
 test('owned matching uses namespace + catalog item, not the promotional offer ID', () => {
   const items=[{key:'offer-1',category:'pc',catalogItems:[{namespace:'ns',id:'catalog-1'}]}];
-  const snapshot={accountId:'account-a',checkedAt:now,owned:[{namespace:'ns',id:'offer-1'}]};
+  const snapshot={accountId:'account-a',checkedAt:now,owned:[{namespace:'ns',id:'offer-1'}],checks:[{namespace:'ns',id:'catalog-1',owned:false}]};
   assert.equal(D.applyOwnership(items,snapshot)[0].status,'unowned');
   snapshot.owned=[{namespace:'ns',id:'catalog-1'}];
   assert.equal(D.applyOwnership(items,snapshot)[0].status,'owned');
@@ -95,11 +95,11 @@ test('PC and Android variants of the same title have distinct ownership', () => 
   const items=[{key:'pc',category:'pc',catalogItems:[{namespace:'same',id:'pc-item'}]},
     {key:'android',category:'android',catalogItems:[{namespace:'same',id:'android-item'}]}];
   const result=D.applyOwnership(items,{accountId:'account-a',checkedAt:now,owned:[{namespace:'same',id:'pc-item'}]});
-  assert.deepEqual(result.map(item=>item.status),['owned','unowned']);
+  assert.deepEqual(result.map(item=>item.status),['owned','unknown']);
 });
 test('bundle ownership requires all parts and identifies partially owned bundles', () => {
   const items=[{key:'bundle',category:'pc',catalogItems:[{namespace:'ns',id:'a'},{namespace:'ns',id:'b'}]}];
-  const snapshot={accountId:'account-a',checkedAt:now,owned:[{namespace:'ns',id:'a'}]};
+  const snapshot={accountId:'account-a',checkedAt:now,owned:[{namespace:'ns',id:'a'}],checks:[{namespace:'ns',id:'b',owned:false}]};
   assert.equal(D.applyOwnership(items,snapshot)[0].status,'partial');
   snapshot.owned.push({namespace:'ns',id:'b'});
   assert.equal(D.applyOwnership(items,snapshot)[0].status,'owned');
@@ -120,7 +120,7 @@ test('unknown identity, malformed ownership, and missing product IDs never becom
 test('switching accounts replaces previous ownership instead of accumulating it', () => {
   const item={category:'pc',catalogItems:[{namespace:'ns',id:'a'}]};
   const owned=D.applyOwnership([item],{accountId:'a',checkedAt:now,owned:[{namespace:'ns',id:'a'}]});
-  const other=D.applyOwnership(owned,{accountId:'b',checkedAt:now+1000,owned:[]});
+  const other=D.applyOwnership(owned,{accountId:'b',checkedAt:now+1000,owned:[],checks:[{namespace:'ns',id:'a',owned:false}]});
   assert.equal(other[0].status,'unowned'); assert.equal(other[0].ownershipAccount,'b');
 });
 test('Fab ownership is kept separate from Epic game entitlements', () => {
@@ -145,4 +145,44 @@ test('mobile covers use the verified Epic thumbnail endpoint without rewriting s
   assert.equal(D.coverUrl('https://cdn1.epicgames.com/game/cover.png?signature=example'),
     'https://cdn1.epicgames.com/game/cover.png?signature=example');
   assert.equal(D.coverUrl('https://media.fab.com/cover.png'),'https://media.fab.com/cover.png');
+});
+test('mobile grant inherited through another catalog item is confirmed by exact ownership query', () => {
+  const item={key:'android-agent',category:'android',catalogItems:[{namespace:'same-ns',id:'android-item'}]};
+  const direct={accountId:'a',checkedAt:now,owned:[{namespace:'same-ns',id:'parent-item'}]};
+  assert.equal(D.applyOwnership([item],direct)[0].status,'unknown','absence from direct grants is insufficient');
+  const proof={...direct,checks:[{namespace:'same-ns',id:'android-item',owned:true}]};
+  assert.equal(D.applyOwnership([item],proof)[0].status,'owned');
+  proof.checks[0].owned=false;
+  assert.equal(D.applyOwnership([item],proof)[0].status,'unowned','only an explicit false permission is a negative');
+  proof.checks[0].id='pc-item';
+  assert.equal(D.applyOwnership([item],proof)[0].status,'unknown','PC permission cannot stand in for Android permission');
+});
+test('upcoming games retain ownership and cannot be selected even when keys are supplied directly', () => {
+  const future=game({items:[{namespace:'ns',id:'future-item'}],price:{totalPrice:{discountPrice:500}},
+    promotions:{upcomingPromotionalOffers:[{promotionalOffers:[{startDate:'2099-10-22T15:00:00Z',endDate:'2099-10-29T15:00:00Z',discountSetting:{discountPercentage:0}}]}]}});
+  const parsed=D.parsePc(pc(future),now);
+  assert.equal(parsed[0].availability,'upcoming');
+  assert.equal(D.queue(parsed,[parsed[0].key]).length,0);
+  const owned=D.applyOwnership(parsed,{accountId:'a',checkedAt:now,owned:[{namespace:'ns',id:'future-item'}]});
+  assert.equal(owned[0].status,'owned');
+  assert.equal(owned[0].availability,'upcoming');
+  assert.equal(D.queue([{key:'tampered',start:'2099-01-01T00:00:00Z',availability:'active'}],['tampered']).length,0);
+});
+test('mobile future free price is shown with independent catalog and offer identity', () => {
+  const data={data:[{type:'freeGame',offers:[{content:{title:'Mobile future',catalogItemId:'mobile-catalog',mapping:{slug:'mobile-future'},purchase:[{
+    purchaseType:'Claim',price:{decimalPrice:0},purchaseStateEffectiveDate:Date.parse('2099-01-01'),purchasePayload:{sandboxId:'mobile-ns',offerId:'mobile-offer'},discount:{discountEndDate:'2099-01-08T00:00:00Z'}}]}}]}]};
+  const item=D.parseMobile(data,now)[0];
+  assert.equal(item.availability,'upcoming');
+  assert.deepEqual(item.catalogItems,[{namespace:'mobile-ns',id:'mobile-catalog'}]);
+  assert.equal(item.id,'mobile-offer');
+  assert.equal(D.queue([item],[item.key]).length,0);
+});
+test('an active mobile Claim takes precedence over a later free price and malformed dates are excluded', () => {
+  const future={purchaseType:'Claim',price:{decimalPrice:0},purchaseStateEffectiveDate:'2099-01-01T00:00:00Z'};
+  const active={...future,purchaseStateEffectiveDate:'2026-10-15T00:00:00Z'};
+  const content={title:'Mobile',mapping:{slug:'mobile'},purchase:[future,active]};
+  const data={data:[{type:'freeGame',offers:[{content}]}]};
+  assert.equal(D.parseMobile(data,now)[0].availability,'active');
+  content.purchase=[{...future,purchaseStateEffectiveDate:'broken-date'}];
+  assert.equal(D.parseMobile(data,now).length,0);
 });

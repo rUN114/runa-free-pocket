@@ -9,7 +9,7 @@ function element(text, overrides = {}) {
     querySelector:()=>null,querySelectorAll:()=>[],click(){this.clicks=(this.clicks||0)+1;},...overrides};
 }
 async function run({mode='check',category='pc',ctaText='Get',paymentText=null,library=[],fetchError=false,
-  libraryPages=null,failLibraryPage=-1,urlOverride=null,authBody=''} = {}) {
+  libraryPages=null,failLibraryPage=-1,urlOverride=null,authBody='',itemOverrides={}} = {}) {
   const messages = [], ticks = [], requests = [];
   let libraryPage = 0;
   const cta = element(ctaText);
@@ -35,7 +35,7 @@ async function run({mode='check',category='pc',ctaText='Get',paymentText=null,li
   context.window = context; context.top = context;
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(base,'domain.js'),'utf8')+'\n'+fs.readFileSync(path.join(base,'automation.js'),'utf8'), context);
-  context.runPocketTask({nonce:'test',mode,category,country:'CN',item:{id:'12345678-abcd-abcd-abcd-123456789012',url}});
+  context.runPocketTask({nonce:'test',mode,category,country:'CN',item:{id:'12345678-abcd-abcd-abcd-123456789012',url,...itemOverrides}});
   await ticks[0]();
   return {messages,cta,submit,tick:ticks[0],requests};
 }
@@ -113,4 +113,12 @@ test('Fab repeated cursors fail explicitly instead of repeatedly loading the lib
     {results:[],cursors:{next:'again'}},{results:[],cursors:{next:'again'}}]});
   assert.ok(result.messages.some(message=>message.type==='error'&&/重复/.test(message.message)));
   assert.ok(!result.messages.some(message=>message.type==='ownership'));
+});
+test('upcoming or expired tasks cannot click Get or place even a zero order', async () => {
+  for (const itemOverrides of [{availability:'upcoming'}, {start:'2099-01-01T00:00:00Z'}, {end:'2000-01-01T00:00:00Z'}]) {
+    const result=await run({mode:'claim',paymentText:'Total $0.00',itemOverrides});
+    assert.equal(result.messages[0].type,'blocked');
+    assert.equal(result.cta.clicks,undefined);
+    assert.equal(result.submit.clicks,undefined);
+  }
 });

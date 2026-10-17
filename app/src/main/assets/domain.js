@@ -44,21 +44,23 @@
   function parsePc(data, now = Date.now()) {
     const items = array(data?.data?.Catalog?.searchStore?.elements, 'Epic 活动');
     return items.flatMap(item => {
-      const promotions = item.promotions?.promotionalOffers || [];
-      const active = promotions.some(group => (group.promotionalOffers || []).some(p =>
-        Date.parse(p.startDate) <= now && now < Date.parse(p.endDate) &&
-        p.discountSetting?.discountPercentage === 0));
-      if (!active || item.price?.totalPrice?.discountPrice !== 0) return [];
+      const promotions = [...(item.promotions?.promotionalOffers || []), ...(item.promotions?.upcomingPromotionalOffers || [])]
+        .flatMap(group => group.promotionalOffers || []).filter(p =>
+          p.discountSetting?.discountPercentage === 0 && Number.isFinite(Date.parse(p.startDate)) && now < Date.parse(p.endDate))
+        .sort((a, b) => Date.parse(a.startDate) - Date.parse(b.startDate));
+      const promotion = promotions.find(p => Date.parse(p.startDate) <= now) || promotions[0];
+      if (!promotion) return [];
+      const upcoming = Date.parse(promotion.startDate) > now;
+      if (!upcoming && item.price?.totalPrice?.discountPrice !== 0) return [];
       const slug = item.offerMappings?.find(m => m.pageType === 'productHome')?.pageSlug ||
         item.catalogNs?.mappings?.[0]?.pageSlug || item.productSlug || item.urlSlug;
-      const ending = promotions.flatMap(p => p.promotionalOffers || []).find(p =>
-        Date.parse(p.startDate) <= now && now < Date.parse(p.endDate) && p.discountSetting?.discountPercentage === 0)?.endDate;
       if (!slug || !item.id || !item.namespace || !item.title) return [];
       return [{key: 'pc:' + item.namespace + ':' + item.id, category: 'pc', title: item.title,
-        url: productUrl(slug), id: item.id, namespace: item.namespace, end: ending, status: 'unknown',
+        url: productUrl(slug), id: item.id, namespace: item.namespace, start: promotion.startDate, end: promotion.endDate,
+        availability: upcoming ? 'upcoming' : 'active', status: 'unknown',
         catalogItems: (item.items || []).filter(entry => entry.id && entry.namespace)
           .map(entry => ({id: entry.id, namespace: entry.namespace})),
-        originalPrice: item.price.totalPrice.fmtPrice?.originalPrice || '', description: plainText(item.description),
+        originalPrice: item.price?.totalPrice?.fmtPrice?.originalPrice || '', description: plainText(item.description),
         publisher: item.seller?.name || '', ...epicMedia(item.keyImages)}];
     });
   }
@@ -66,20 +68,28 @@
     return array(data?.data, '安卓活动').filter(s => s.type === 'freeGame').flatMap(section =>
       array(section.offers, '安卓商品').flatMap(offer => {
         const content = offer.content;
-        const claim = content?.purchase?.find(p => p.purchaseType === 'Claim' && p.price?.decimalPrice === 0 &&
-          (!p.purchaseStateEffectiveDate || Date.parse(p.purchaseStateEffectiveDate) <= now) &&
-          (!p.discount?.discountEndDate || now < Date.parse(p.discount.discountEndDate)));
+        const claims = (content?.purchase || []).filter(p => p.purchaseType === 'Claim' && p.price?.decimalPrice === 0 &&
+          (!p.purchaseStateEffectiveDate || Number.isFinite(promotionTime(p.purchaseStateEffectiveDate))) &&
+          (!p.discount?.discountEndDate || now < promotionTime(p.discount.discountEndDate)))
+          .sort((a, b) => promotionTime(a.purchaseStateEffectiveDate) - promotionTime(b.purchaseStateEffectiveDate));
+        const claim = claims.find(p => promotionTime(p.purchaseStateEffectiveDate) <= now) || claims[0];
         if (!claim) return [];
         const slug = content.mapping?.slug;
         if (!slug || !content.title) return [];
         return [{key: 'android:' + slug, category: 'android', title: content.title, url: productUrl(slug),
-          slug, end: claim.discount?.discountEndDate, status: 'unknown',
+          slug, id: claim.purchasePayload?.offerId, namespace: claim.purchasePayload?.sandboxId,
+          start: claim.purchaseStateEffectiveDate, end: claim.discount?.discountEndDate,
+          availability: promotionTime(claim.purchaseStateEffectiveDate) > now ? 'upcoming' : 'active', status: 'unknown',
           catalogItems: content.catalogItemId && claim.purchasePayload?.sandboxId ?
             [{id: content.catalogItemId, namespace: claim.purchasePayload.sandboxId}] : [],
           cover: imageUrl(content.media?.card16x9?.imageSrc || content.media?.coverImage?.imageSrc),
           screenshots: [imageUrl(content.media?.coverImage?.imageSrc)].filter(Boolean),
-          description: plainText(content.description), originalPrice: claim.discount?.originalPriceDisplay || ''}];
+          description: plainText(content.description || content.shortDescription), originalPrice: claim.discount?.originalPriceDisplay || ''}];
       }));
+  }
+  function promotionTime(value) {
+    if (!value) return 0;
+    return typeof value === 'number' ? value : Date.parse(value);
   }
   function parseFab(data) {
     if (typeof data?.isLimitedFreeContent !== 'boolean' || !data.blockContentType) throw new Error('Fab 活动返回格式已变化');
@@ -100,6 +110,8 @@
   function applyOwnership(items, snapshot, fresh = true, category = null) {
     if (!snapshot?.accountId || !Number.isFinite(snapshot.checkedAt)) throw new Error('账号库存身份或同步时间缺失');
     const owned = new Set(array(snapshot.owned, '账号库存').map(entry => entry.namespace + ':' + entry.id));
+    const checks = new Map(array(snapshot.checks || [], '商品拥有权限').map(entry => [entry.namespace + ':' + entry.id, entry.owned]));
+    for (const [id, hasItem] of checks) if (hasItem === true) owned.add(id);
     return items.map(item => {
       if (item.category === 'fab' || (category && item.category !== category)) return item;
       const ids = item.catalogItems || [];
@@ -108,10 +120,12 @@
       const hasAll = matches === ids.length;
       let status = 'unknown';
       if (hasAll) status = 'owned';
-      else if (fresh) status = matches ? 'partial' : 'unowned';
+      const fullyChecked = ids.every(entry => owned.has(entry.namespace + ':' + entry.id) || checks.get(entry.namespace + ':' + entry.id) === false);
+      if (!hasAll && fresh && fullyChecked) status = matches ? 'partial' : 'unowned';
       let reason = '等待重新同步';
       if (hasAll) reason = '账号拥有凭证已确认';
-      else if (fresh) reason = matches ? '组合商品中仅部分已拥有' : '完整拥有凭证中未找到该商品';
+      else if (fresh && fullyChecked) reason = matches ? '组合商品中仅部分已拥有' : '官方商品拥有权限查询确认未拥有';
+      else if (fresh) reason = '直接凭证未匹配，仍需查询该版本的商品拥有权限';
       return {...item, status,
         ownershipAccount: snapshot.accountId, checkedAt: snapshot.checkedAt, cached: !fresh,
         statusReason: reason};
@@ -132,9 +146,10 @@
   function queue(items, keys) {
     const wanted = new Set(keys);
     return items.filter(item => wanted.has(item.key) && !['owned', 'expired'].includes(item.status) &&
+      item.availability !== 'upcoming' && (!item.start || promotionTime(item.start) <= Date.now()) &&
       (!item.end || Date.parse(item.end) > Date.now()));
   }
-  const api = {parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, zeroTotal, queue};
+  const api = {parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, zeroTotal, queue};
   if (typeof module !== 'undefined') module.exports = api;
   root.PocketDomain = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

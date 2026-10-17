@@ -21,6 +21,8 @@ import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /** Local Epic authorization and complete, paginated ownership reads. Never handles account passwords. */
 final class EpicSession {
@@ -110,7 +112,7 @@ final class EpicSession {
         Ownership(JSONObject session, JSONObject snapshot) { this.session = session; this.snapshot = snapshot; }
     }
 
-    Ownership readOwnership() throws IOException, JSONException {
+    Ownership readOwnership(JSONArray requestedItems) throws IOException, JSONException {
         if (saved == null) throw new IOException("请先连接 Epic 账号");
         JSONObject session = new JSONObject(saved.toString());
         String accountId = session.getString("accountId");
@@ -134,10 +136,78 @@ final class EpicSession {
             } catch (JSONException error) { throw new IOException("拥有凭证格式已变化，未发布不完整结果", error); }
         });
         for (EpicEntitlements.Grant grant : grants) owned.put(new JSONObject().put("namespace", grant.namespace).put("id", grant.id));
+        // Direct entitlements omit inherited grants. Ask Epic for the exact catalog permissions too.
+        Set<String> direct = new LinkedHashSet<>();
+        for (EpicEntitlements.Grant grant : grants) direct.add(grant.namespace + ":" + grant.id);
+        Set<String> missing = new LinkedHashSet<>();
+        for (int i = 0; i < requestedItems.length(); i++) {
+            JSONArray ids = requestedItems.getJSONObject(i).optJSONArray("catalogItems");
+            if (ids == null) continue;
+            for (int j = 0; j < ids.length(); j++) {
+                JSONObject id = ids.getJSONObject(j);
+                String catalogKey = id.getString("namespace") + ":" + id.getString("id");
+                if (!catalogKey.matches("[a-zA-Z0-9_-]{1,100}:[a-zA-Z0-9_-]{1,100}")) throw new JSONException("商品权限标识无效");
+                if (!direct.contains(catalogKey)) missing.add(catalogKey);
+            }
+        }
+        JSONArray checks = new JSONArray();
+        List<String> pending = new ArrayList<>(missing);
+        for (int offset = 0; offset < pending.size(); offset += 20) {
+            List<String> batch = pending.subList(offset, Math.min(offset + 20, pending.size()));
+            JSONArray verified = queryCatalogOwnership(accountId, authorization, batch);
+            for (int i = 0; i < verified.length(); i++) {
+                JSONObject entry = verified.getJSONObject(i);
+                checks.put(entry);
+                if (entry.getBoolean("owned")) owned.put(new JSONObject().put("namespace", entry.getString("namespace")).put("id", entry.getString("id")));
+            }
+        }
         JSONObject snapshot = new JSONObject().put("accountId", accountId)
-                .put("checkedAt", System.currentTimeMillis()).put("owned", owned);
+                .put("checkedAt", System.currentTimeMillis()).put("owned", owned).put("checks", checks);
         session.put("snapshot", snapshot);
         return new Ownership(session, snapshot);
+    }
+
+    private static JSONArray queryCatalogOwnership(String accountId, String authorization, List<String> ids) throws IOException, JSONException {
+        StringBuilder form = new StringBuilder();
+        for (String id : ids) {
+            if (form.length() > 0) form.append('&');
+            form.append("nsCatalogItemId=").append(encode(id));
+        }
+        String endpoint = "https://ecommerceintegration-public-service-ecomprod02.ol.epicgames.com/ecommerceintegration/api/public/platforms/EPIC/identities/"
+                + accountId + "/ownershipToken";
+        JSONObject response = new JSONObject(request(endpoint, authorization, form.toString()));
+        return parseOwnershipProof(response.getString("token"), accountId, ids, System.currentTimeMillis());
+    }
+
+    static JSONArray parseOwnershipProof(String token, String accountId, List<String> ids, long now) throws JSONException {
+        if (token.startsWith("egoc1~")) token = token.substring(6);
+        String[] parts = token.split("\\.");
+        if (parts.length != 3) throw new JSONException("Epic 商品权限响应无效");
+        // This token comes directly from Epic over verified HTTPS, never from a page or another client.
+        JSONObject proof;
+        try { proof = new JSONObject(new String(java.util.Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8)); }
+        catch (IllegalArgumentException error) { throw new JSONException("Epic 商品权限编码无效"); }
+        if (!accountId.equals(proof.getString("sub")) || proof.getLong("exp") * 1000 <= now)
+            throw new JSONException("Epic 商品权限的账号或有效期不匹配");
+        JSONArray entries = proof.getJSONArray("ent");
+        JSONArray result = new JSONArray();
+        Set<String> received = new LinkedHashSet<>();
+        for (int i = 0; i < entries.length(); i++) {
+            JSONObject entry = entries.getJSONObject(i);
+            String namespace = entry.getString("namespace"), id = entry.getString("catalogItemId");
+            String key = namespace + ":" + id;
+            if (!ids.contains(key) || !received.add(key) || !(entry.get("owned") instanceof Boolean))
+                throw new JSONException("Epic 商品权限与请求商品不匹配");
+            result.put(new JSONObject().put("namespace", namespace).put("id", id).put("owned", entry.getBoolean("owned")));
+        }
+        // Epic documents an empty ent array when none of the requested items are owned.
+        // Only this directly requested, account-bound proof gives absent entries a negative meaning.
+        for (String requested : ids) {
+            if (received.contains(requested)) continue;
+            String[] identity = requested.split(":", 2);
+            result.put(new JSONObject().put("namespace", identity[0]).put("id", identity[1]).put("owned", false));
+        }
+        return result;
     }
 
     private static String encode(String value) { return android.net.Uri.encode(value); }

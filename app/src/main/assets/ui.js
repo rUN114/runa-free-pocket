@@ -27,6 +27,7 @@ function localTime(value) {
 }
 
 function deadline(item) {
+  if (item.availability === 'upcoming') return localTime(PocketDomain.promotionTime(item.start)) + ' 开始';
   if (!item.end) return '以官网活动为准';
   const left = Date.parse(item.end) - Date.now();
   if (left <= 0) return '活动已结束';
@@ -39,16 +40,35 @@ function currentItems() { return state.items.filter(item => item.category === ca
 function available(items) { return PocketDomain.queue(items, items.map(item => item.key)); }
 function accountForCategory() { return category === 'fab' ? state.fabAccount || {} : state.epicAccount || {}; }
 
-function cover(item, className) {
-  const url = PocketDomain.coverUrl(item.cover);
-  if (!url) return element('div', 'cover-fallback', item.mediaError || '暂无官方预览图');
+function artwork(url, alt, className, retryable = false) {
+  const frame = element('div', 'media-frame');
+  if (!url) return element('div', 'cover-fallback', '暂无官方预览图');
   const image = element('img', className);
   image.src = url;
-  image.alt = item.title + ' 官方封面';
+  image.alt = alt;
   image.referrerPolicy = 'no-referrer';
   image.decoding = 'async';
-  image.addEventListener('error', () => image.replaceWith(element('div', 'cover-fallback', '封面暂未加载，点击查看详情')), {once: true});
-  return image;
+  image.addEventListener('error', () => {
+    image.hidden = true;
+    const error = element('div', 'cover-fallback', '图片加载失败，请检查网络');
+    if (retryable) {
+      const retry = element('button', 'secondary', '重试图片');
+      retry.onclick = () => {
+        error.remove(); image.hidden = false;
+        const next = new URL(url, location.href);
+        next.searchParams.set('retry', String(Date.now()));
+        image.src = next.href;
+      };
+      error.append(retry);
+    }
+    frame.append(error);
+  });
+  frame.append(image);
+  return frame;
+}
+
+function cover(item, className) {
+  return artwork(item.localCover || PocketDomain.coverUrl(item.cover), item.title + ' 官方封面', className, !!className);
 }
 
 function renderCard(item) {
@@ -76,7 +96,7 @@ function renderCard(item) {
   titleRow.append(label, element('h3', '', item.title));
   const meta = element('div', 'card-meta');
   if (item.originalPrice) meta.append(element('del', '', item.originalPrice.replace(/^CN¥/, '¥')));
-  meta.append(element('span', 'free-price', '限时免费'), element('span', 'deadline', deadline(item)));
+  meta.append(element('span', 'free-price', item.availability === 'upcoming' ? '即将限免 · 暂不可领取' : '限时免费'), element('span', 'deadline', deadline(item)));
   info.append(titleRow, meta);
   if (item.checkedAt) info.append(element('p', 'card-hint', (item.cached ? '上次同步 ' : '已核实 ') + localTime(item.checkedAt)));
   else if (item.status === 'error') info.append(element('p', 'card-hint', '未把读取失败当作未拥有'));
@@ -99,9 +119,11 @@ function updateSelection() {
 
 function render() {
   const current = currentItems();
+  const active = current.filter(item => item.availability !== 'upcoming');
+  const upcoming = current.filter(item => item.availability === 'upcoming');
   const account = accountForCategory();
   $('category-title').textContent = category === 'fab' ? '限时免费素材' : '当前限免';
-  $('item-count').textContent = '共 ' + current.length + ' 项';
+  $('item-count').textContent = '共 ' + active.length + ' 项';
   let connection = category === 'fab' ? '未连接 Fab' : '未连接 Epic';
   if (account.connected) connection = account.displayName || '账号已连接';
   if (account.error) connection += ' · 同步失败';
@@ -124,13 +146,18 @@ function render() {
   }
   for (const id of ['account', 'refresh', 'sync', 'country', 'login-epic', 'login-fab']) $(id).disabled = state.busy;
   $('owned-count').textContent = '已拥有 ' + current.filter(item => item.status === 'owned').length + ' 项';
-  const shown = $('hide-owned').checked ? current.filter(item => item.status !== 'owned') : current;
+  const shown = $('hide-owned').checked ? active.filter(item => item.status !== 'owned') : active;
   $('items').replaceChildren(...shown.map(renderCard));
+  const future = $('hide-owned').checked ? upcoming.filter(item => item.status !== 'owned') : upcoming;
+  $('upcoming-section').hidden = !upcoming.length;
+  $('upcoming-count').textContent = '共 ' + upcoming.length + ' 项';
+  $('upcoming-items').replaceChildren(...future.map(renderCard));
+  if (upcoming.length && !future.length) $('upcoming-items').append(element('p', 'dialog-note', '即将限免的内容均已拥有，已按筛选隐藏。'));
   if (!shown.length) {
     const empty = element('div', 'empty');
     let title = '读取本期免费内容';
     let text = '活动从官方商城获取，点击刷新可重试。';
-    if (current.length && $('hide-owned').checked) { title = '本期内容都已拥有'; text = '取消“隐藏已拥有”可以查看已领取内容。'; }
+    if (active.length && $('hide-owned').checked) { title = '本期内容都已拥有'; text = '取消“隐藏已拥有”可以查看已领取内容。'; }
     else if (state.updated[category]) { title = '当前没有可领取的活动'; text = '活动会定期更新，以官方商城为准。'; }
     empty.append(element('h3', '', title), element('p', '', text));
     $('items').append(empty);
@@ -147,16 +174,14 @@ function openDetail(key) {
   title.id = 'detail-title';
   body.append(title, element('p', 'detail-status', (statuses[item.status] || statuses.unknown) + (item.checkedAt ? ' · ' + localTime(item.checkedAt) : '')));
   if (item.statusReason) body.append(element('p', 'dialog-note', item.statusReason));
+  if (item.availability === 'upcoming') body.append(element('p', 'upcoming-note', '即将限免，' + localTime(PocketDomain.promotionTime(item.start)) + ' 开始。开始前不可领取，拥有状态仍会同步。'));
   const gallery = element('div', 'detail-gallery');
   for (const [index, src] of (item.screenshots || []).entries()) {
-    const url = PocketDomain.previewUrl(src);
+    const url = item.localScreenshots?.[index] || PocketDomain.previewUrl(src);
     if (!url) continue;
-    const image = element('img');
-    image.src = url;
-    image.alt = item.title + ' 官方预览图 ' + (index + 1);
-    image.loading = 'lazy';
-    image.referrerPolicy = 'no-referrer';
-    gallery.append(image);
+    const frame = artwork(url, item.title + ' 官方预览图 ' + (index + 1), '', true);
+    frame.querySelector('img').loading = 'lazy';
+    gallery.append(frame);
   }
   if (gallery.children.length) body.append(element('p', 'gallery-label', '官方预览图 · ' + gallery.children.length + ' 张，可横向滑动'), gallery);
   body.append(element('p', 'detail-description', item.description || '当前官方列表未提供简介，可在商品页面查看完整说明。'));

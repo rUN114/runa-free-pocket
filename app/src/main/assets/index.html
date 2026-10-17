@@ -24,12 +24,17 @@
     <div id="message" class="message" role="status" aria-live="polite">正在读取本期免费内容…</div>
     <div class="filters"><label><input id="hide-owned" type="checkbox">隐藏已拥有</label><span id="owned-count"></span></div>
     <section id="items" class="items" aria-label="免费内容"></section>
+    <section id="upcoming-section" hidden aria-label="即将限免">
+      <div class="section-heading"><div><h2>即将推出</h2><span id="upcoming-count"></span></div></div>
+      <p class="upcoming-note">开始前不可领取，可提前查看是否已拥有。仅显示官方已公布的预告。</p>
+      <div id="upcoming-items" class="items"></div>
+    </section>
     <p id="updated" class="updated">活动尚未更新</p>
-    <details class="help"><summary>拥有状态与领取说明</summary><p>已拥有来自当前账号的拥有凭证或 Fab 素材库。缓存状态会标明“上次同步”；同步失败不会当作“未拥有”。电脑和安卓版本按独立商品判断。</p><p>只自动提交明确合计为零的订单。验证码、年龄确认和首次许可协议需要你在官方网页处理。领取后会重新核实结果。</p><p>Fab 限时免费通常每两周更新，以官网为准。本程序是第三方工具，与 Epic Games、Fab 无隶属关系。</p></details>
+    <details class="help"><summary>拥有状态与领取说明</summary><p>已拥有来自当前账号的官方商品权限或 Fab 素材库。缓存状态会标明“上次同步”；同步失败不会当作“未拥有”。电脑和安卓版本按独立商品判断。</p><p>只自动提交明确合计为零的订单。验证码、年龄确认和首次许可协议需要你在官方网页处理。领取后会重新核实结果。</p><p>Fab 限时免费通常每两周更新，以官网为准。本程序是第三方工具，与 Epic Games、Fab 无隶属关系。</p></details>
   </main>
   <footer><label class="select-all"><input id="select-all" type="checkbox"><span>全选</span></label><div class="selection"><strong id="selection-count">未选择</strong><span>自动跳过已拥有</span></div><button id="claim" class="primary" disabled>领取所选</button></footer>
 </div>
 <dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title"><div class="dialog-head"><span>内容详情</span><button id="close-detail" class="close-button" aria-label="关闭详情">✕</button></div><div id="detail-content"></div></dialog>
-<dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title"><div class="dialog-head"><h2 id="account-title">账号与同步</h2><button id="close-account" class="close-button" aria-label="关闭账号设置">✕</button></div><p class="dialog-note">在官方页面登录。完成连接后，程序自动读取当前账号的拥有状态。</p><section class="account-row"><div><strong>Epic Games</strong><p id="epic-name">未连接</p></div><button id="login-epic" class="secondary">连接 Epic</button></section><section class="account-row"><div><strong>Fab 素材库</strong><p id="fab-name">未连接</p></div><button id="login-fab" class="secondary">连接 Fab</button></section><label class="country-row">Epic 账号地区<select id="country"><option value="CN">中国大陆</option><option value="HK">中国香港</option><option value="TW">中国台湾</option><option value="US">美国</option><option value="JP">日本</option><option value="GB">英国</option><option value="DE">德国</option></select></label><p class="dialog-note">请选择账号的真实地区。授权凭据保存在本机加密存储中；程序不要求输入账号密码。</p><p class="build-version">周免口袋 0.2.0 · 测试版</p></dialog>
+<dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title"><div class="dialog-head"><h2 id="account-title">账号与同步</h2><button id="close-account" class="close-button" aria-label="关闭账号设置">✕</button></div><p class="dialog-note">在官方页面登录。完成连接后，程序自动读取当前账号的拥有状态。</p><section class="account-row"><div><strong>Epic Games</strong><p id="epic-name">未连接</p></div><button id="login-epic" class="secondary">连接 Epic</button></section><section class="account-row"><div><strong>Fab 素材库</strong><p id="fab-name">未连接</p></div><button id="login-fab" class="secondary">连接 Fab</button></section><label class="country-row">Epic 账号地区<select id="country"><option value="CN">中国大陆</option><option value="HK">中国香港</option><option value="TW">中国台湾</option><option value="US">美国</option><option value="JP">日本</option><option value="GB">英国</option><option value="DE">德国</option></select></label><p class="dialog-note">请选择账号的真实地区。授权凭据保存在本机加密存储中；程序不要求输入账号密码。</p><p class="build-version">周免口袋 0.3.0 · 测试版</p></dialog>
 <script src="domain.js"></script><script src="ui.js"></script>
 </body></html>

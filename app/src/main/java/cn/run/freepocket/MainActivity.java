@@ -32,6 +32,7 @@ import org.json.JSONObject;
 import org.json.JSONTokener;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.ArrayDeque;
@@ -54,6 +55,7 @@ public class MainActivity extends Activity {
     private JSONObject updated = new JSONObject();
     private JSONObject fabAccount = new JSONObject();
     private EpicSession epic;
+    private OfficialImages images;
     private String country = "CN";
     private String message = "正在读取本期免费内容…";
     private String completionNote = "";
@@ -89,6 +91,7 @@ public class MainActivity extends Activity {
             loadCache();
         } catch (IOException error) { throw new IllegalStateException("应用脚本资源缺失", error); }
         initializeSession();
+        images = new OfficialImages(new java.io.File(getCacheDir(), "official-images"));
         buildViews();
         catalogue.loadUrl(APP_ORIGIN + "/assets/index.html");
     }
@@ -118,12 +121,12 @@ public class MainActivity extends Activity {
     private void loadCache() {
         var preferences = getSharedPreferences("catalogue", MODE_PRIVATE);
         country = preferences.getString("country", "CN");
-        // Version 1 did not retain catalog-item IDs or image metadata. Re-fetch this derived cache.
-        if (preferences.getInt("schema", 1) != 2) return;
         try {
+            fabAccount = new JSONObject(preferences.getString("fabAccount", "{}"));
+            // Re-read derived metadata after promotion/ownership rules change; retain official sign-in.
+            if (preferences.getInt("schema", 1) != 3) return;
             items = new JSONArray(preferences.getString("items", "[]"));
             updated = new JSONObject(preferences.getString("updated", "{}"));
-            fabAccount = new JSONObject(preferences.getString("fabAccount", "{}"));
             for (int i = 0; i < items.length(); i++) items.getJSONObject(i).put("status", "unknown");
         } catch (JSONException error) {
             items = new JSONArray();
@@ -150,6 +153,16 @@ public class MainActivity extends Activity {
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this)).build();
         catalogue.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                if (APP_ORIGIN.equals(uri.getScheme() + "://" + uri.getHost()) && uri.getPath() != null && uri.getPath().startsWith("/images/")) {
+                    try {
+                        byte[] bytes = images.read(uri.getLastPathSegment(), "1".equals(uri.getQueryParameter("cover")));
+                        return new WebResourceResponse(OfficialImages.mime(bytes), null, new ByteArrayInputStream(bytes));
+                    } catch (IOException error) {
+                        return new WebResourceResponse("text/plain", "UTF-8", 502, "Image unavailable", Collections.emptyMap(),
+                                new ByteArrayInputStream("图片读取失败，请重试或检查网络".getBytes(StandardCharsets.UTF_8)));
+                    }
+                }
                 return assets.shouldInterceptRequest(request.getUrl());
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -338,7 +351,7 @@ public class MainActivity extends Activity {
         try {
             while (active != null && active.optString("mode").equals("claim")) {
                 JSONObject current = find(active.getJSONObject("item").getString("key"));
-                if (current != null && !Arrays.asList("owned", "expired").contains(current.optString("status"))) {
+                if (current != null && claimableNow(current, System.currentTimeMillis())) {
                     active.put("item", current);
                     break;
                 }
@@ -418,6 +431,19 @@ public class MainActivity extends Activity {
 
     private boolean current(String nonce) { return active != null && nonce.equals(active.optString("nonce")); }
 
+    static boolean claimableNow(JSONObject item, long now) {
+        if (Arrays.asList("owned", "expired").contains(item.optString("status")) || item.optString("availability").equals("upcoming")) return false;
+        try {
+            Object start = item.opt("start");
+            if (start != null && start != JSONObject.NULL && !start.toString().isEmpty()) {
+                long time = start instanceof Number ? ((Number) start).longValue() : java.time.Instant.parse(start.toString()).toEpochMilli();
+                if (time > now) return false;
+            }
+            String end = item.optString("end");
+            return end.isEmpty() || java.time.Instant.parse(end).toEpochMilli() > now;
+        } catch (java.time.format.DateTimeParseException error) { return false; }
+    }
+
     private void requestPcCatalogue(String nonce) {
         String requestedCountry = country;
         network.execute(() -> {
@@ -465,15 +491,22 @@ public class MainActivity extends Activity {
     }
 
     private void requestEpicOwnership(String nonce) {
+        String category = active.optString("category");
+        JSONArray requested = new JSONArray();
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item != null && category.equals(item.optString("category"))) requested.put(item);
+        }
+        String requestedJson = requested.toString();
         network.execute(() -> {
             try {
-                EpicSession.Ownership result = epic.readOwnership();
+                EpicSession.Ownership result = epic.readOwnership(new JSONArray(requestedJson));
                 runOnUiThread(() -> {
                     if (!current(nonce)) return;
                     try {
                         epic.save(result.session);
                         epicSyncError = "";
-                        evaluateItems("PocketDomain.applyOwnership(" + items + "," + result.snapshot + ",true)", nonce, value -> {
+                        evaluateItems("PocketDomain.applyOwnership(" + items + "," + result.snapshot + ",true," + JSONObject.quote(category) + ")", nonce, value -> {
                             items = value;
                             completionNote = "拥有状态已同步：" + epic.displayName() + "。已拥有的项目会跳过。";
                             if (active.has("item")) {
@@ -589,7 +622,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < items.length(); i++) {
             JSONObject item = items.getJSONObject(i);
             boolean fabItem = item.getString("category").equals("fab");
-            if (fabItem != fab) continue;
+            if (fabItem != fab || !item.getString("category").equals(active.optString("category"))) continue;
             item.put("statusReason", reason).put("cached", true);
             if (!item.optString("status").equals("owned")) item.put("status", "error");
         }
@@ -693,13 +726,20 @@ public class MainActivity extends Activity {
     }
 
     private void save() {
-        getSharedPreferences("catalogue", MODE_PRIVATE).edit().putInt("schema", 2).putString("items", items.toString())
+        getSharedPreferences("catalogue", MODE_PRIVATE).edit().putInt("schema", 3).putString("items", items.toString())
                 .putString("updated", updated.toString()).putString("country", country).putString("fabAccount", fabAccount.toString()).apply();
     }
 
     private void publish() {
         if (!uiReady) return;
         try {
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.getJSONObject(i);
+                item.put("localCover", images.register(item.optString("cover"), true));
+                JSONArray local = new JSONArray(), screenshots = item.optJSONArray("screenshots");
+                if (screenshots != null) for (int j = 0; j < screenshots.length(); j++) local.put(images.register(screenshots.optString(j), false));
+                item.put("localScreenshots", local);
+            }
             JSONObject account = new JSONObject().put("connected", epic.connected()).put("displayName", epic.displayName())
                     .put("checkedAt", epic.cachedSnapshot() == null ? 0 : epic.cachedSnapshot().optLong("checkedAt")).put("error", epicSyncError);
             JSONObject state = new JSONObject().put("items", items).put("updated", updated).put("country", country)
