@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>周免口袋</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header><div class="brand-icon" aria-hidden="true">▤</div><div><h1>周免口袋</h1><p>每一期免费，都收进你的库</p></div><span class="version">测试版 0.1</span></header>
+  <main>
+    <section class="account"><div class="account-mark" aria-hidden="true">E</div><div class="account-copy"><h2>你的 Epic 账号</h2><p>在官方网页登录，登录状态只保存在本机</p></div><button id="login" class="plain">登录 / 管理</button></section>
+    <nav class="tabs" aria-label="内容分类">
+      <button data-tab="pc" aria-selected="true">电脑游戏</button><button data-tab="android" aria-selected="false">安卓游戏</button><button data-tab="fab" aria-selected="false">Fab 素材</button>
+    </nav>
+    <section class="section-heading"><div><h2 id="category-title">本周免费游戏</h2><p id="source-note">读取 Epic 官方活动，领取后留在你的游戏库</p></div><button id="refresh" class="plain">刷新活动</button></section>
+    <div class="toolbar"><label class="select-all"><input id="select-all" type="checkbox">选择全部</label><label class="region-label">账号地区<select id="country" aria-label="Epic 账号地区"><option value="CN">中国大陆</option><option value="HK">中国香港</option><option value="TW">中国台湾</option><option value="US">美国</option><option value="JP">日本</option><option value="GB">英国</option><option value="DE">德国</option></select></label></div>
+    <div id="message" class="message" role="status" aria-live="polite">首次使用：登录账号，然后刷新活动。</div>
+    <div id="items" class="items"></div>
+    <div class="sync-row"><p id="updated">尚未读取活动</p><button id="sync" class="plain">核实拥有状态</button></div>
+    <details class="help"><summary>领取与拥有状态说明</summary><p>点击一键领取后，会逐项打开官方商品和订单。需要登录、验证码、年龄确认或许可协议时，请在网页中处理。</p><p>“已拥有”只在官方商品主按钮或 Fab 素材库确认后显示。换账号、换地区、重新登录和重启程序后，需重新核实。</p><p>程序只自动提交明确合计为零的订单。页面变化或金额无法确认时会暂停；可在官方页面手动完成后点“核实结果”。</p><p>Fab 限时免费通常两周一换，以官方活动为准。手机游戏按安卓版本单独列出。</p><p>此程序为第三方工具，与 Epic Games、Fab 无隶属关系。</p></details>
+  </main>
+  <footer><div><strong id="selection-count">尚未选择</strong><span>已拥有的项目会自动跳过</span></div><button id="claim" class="primary" disabled>一键领取</button></footer>
+</div>
+<script src="domain.js"></script><script src="ui.js"></script>
+</body></html>
