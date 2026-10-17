@@ -5,3 +5,16 @@ local.properties
 *.keystore
 *.log
 node_modules/
+
+# 本机账号、调试资料及安装包不属于源码。
+work/
+private/
+.env
+.env.*
+epic-account.json
+credentials.json
+cookies*.json
+storage-state*.json
+*.apk
+*.aab
+*.bundle
