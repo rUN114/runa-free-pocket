@@ -12,14 +12,20 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Public artwork only: no account cookies, tokens, or arbitrary remote URLs. */
 final class OfficialImages {
     static final int MAX_IMAGE_BYTES = 12 * 1024 * 1024;
     private static final long MAX_CACHE_BYTES = 80L * 1024 * 1024;
+    // Observed HTTPS Location returned by cdn1.epicgames.com on the Android network in China.
+    private static final String EPIC_CHINA_IMAGE_HOST = "cdn1-epicgames-1251447533.file.myqcloud.com";
+    private static final int MAX_REDIRECTS = 4;
     private final File directory;
     interface Downloader { byte[] fetch(String url) throws IOException; }
+    interface ConnectionOpener { HttpURLConnection open(String url) throws IOException; }
     private final Downloader downloader;
     private final Map<String, String> sources = new ConcurrentHashMap<>();
     private final Map<String, Object> locks = new ConcurrentHashMap<>();
@@ -52,7 +58,7 @@ final class OfficialImages {
                 // Some CDN paths cannot be resized. Retry that exact original artwork once.
                 bytes = fetchImage(source);
             }
-            if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Image cache unavailable");
+            Files.createDirectories(directory.toPath());
             File temporary = File.createTempFile("image-", ".tmp", directory);
             try {
                 Files.write(temporary.toPath(), bytes);
@@ -76,6 +82,7 @@ final class OfficialImages {
             if (!"https".equals(uri.getScheme()) || uri.getUserInfo() != null || (uri.getPort() != -1 && uri.getPort() != 443)) return false;
             String host = uri.getHost();
             if (host == null) return false;
+            if (host.equals(EPIC_CHINA_IMAGE_HOST)) return true;
             for (String domain : new String[]{"epicgames.com", "unrealengine.com", "fab.com", "sketchfab.com"})
                 if (host.equals(domain) || host.endsWith("." + domain)) return true;
             return false;
@@ -91,25 +98,44 @@ final class OfficialImages {
     }
 
     static byte[] download(String source) throws IOException {
-        if (!allowed(source)) throw new IOException("Unofficial image address");
-        HttpURLConnection connection = (HttpURLConnection) URI.create(source).toURL().openConnection();
-        connection.setInstanceFollowRedirects(false);
-        connection.setConnectTimeout(12000);
-        connection.setReadTimeout(15000);
-        connection.setRequestProperty("Accept", "image/webp,image/png,image/jpeg,image/gif");
-        try {
-            if (connection.getResponseCode() != 200) throw new IOException("Image HTTP " + connection.getResponseCode());
-            if (connection.getContentLengthLong() > MAX_IMAGE_BYTES) throw new IOException("Image too large");
-            try (var input = connection.getInputStream(); var output = new ByteArrayOutputStream()) {
-                byte[] buffer = new byte[8192];
-                int count;
-                while ((count = input.read(buffer)) != -1) {
-                    if (output.size() + count > MAX_IMAGE_BYTES) throw new IOException("Image too large");
-                    output.write(buffer, 0, count);
+        return download(source, url -> (HttpURLConnection) URI.create(url).toURL().openConnection());
+    }
+
+    static byte[] download(String source, ConnectionOpener connections) throws IOException {
+        String current = source;
+        Set<String> visited = new HashSet<>();
+        for (int redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+            if (!allowed(current)) throw new IOException("图片地址或跳转目标不属于受支持的官方 HTTPS 图片节点");
+            if (!visited.add(current)) throw new IOException("图片服务器发生循环跳转");
+            HttpURLConnection connection = connections.open(current);
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(12000);
+            connection.setReadTimeout(15000);
+            connection.setRequestProperty("Accept", "image/webp,image/png,image/jpeg,image/gif");
+            try {
+                int status = connection.getResponseCode();
+                if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+                    if (redirects == MAX_REDIRECTS) throw new IOException("图片服务器跳转次数过多");
+                    String location = connection.getHeaderField("Location");
+                    if (location == null || location.trim().isEmpty()) throw new IOException("图片服务器跳转地址缺失");
+                    try { current = URI.create(current).resolve(location).toString(); }
+                    catch (IllegalArgumentException error) { throw new IOException("图片服务器跳转地址无效", error); }
+                    continue;
                 }
-                return output.toByteArray();
-            }
-        } finally { connection.disconnect(); }
+                if (status != 200) throw new IOException("图片请求失败 HTTP " + status);
+                if (connection.getContentLengthLong() > MAX_IMAGE_BYTES) throw new IOException("图片超过大小限制");
+                try (var input = connection.getInputStream(); var output = new ByteArrayOutputStream()) {
+                    byte[] buffer = new byte[8192];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        if (output.size() + count > MAX_IMAGE_BYTES) throw new IOException("图片超过大小限制");
+                        output.write(buffer, 0, count);
+                    }
+                    return output.toByteArray();
+                }
+            } finally { connection.disconnect(); }
+        }
+        throw new IOException("图片服务器跳转次数过多");
     }
 
     static String mime(byte[] bytes) {

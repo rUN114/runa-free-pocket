@@ -136,6 +136,9 @@ public class MainActivity extends Activity {
     }
 
     private void buildViews() {
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(13, 15, 19));
         root.setOnApplyWindowInsetsListener((view, insets) -> {
@@ -159,6 +162,7 @@ public class MainActivity extends Activity {
                         byte[] bytes = images.read(uri.getLastPathSegment(), "1".equals(uri.getQueryParameter("cover")));
                         return new WebResourceResponse(OfficialImages.mime(bytes), null, new ByteArrayInputStream(bytes));
                     } catch (IOException error) {
+                        android.util.Log.e("PocketImages", "Artwork load failed: " + error.getMessage(), error);
                         return new WebResourceResponse("text/plain", "UTF-8", 502, "Image unavailable", Collections.emptyMap(),
                                 new ByteArrayInputStream("图片读取失败，请重试或检查网络".getBytes(StandardCharsets.UTF_8)));
                     }

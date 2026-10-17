@@ -13,7 +13,9 @@
     try {
       const url = new URL(value);
       const allowed = ['epicgames.com', 'unrealengine.com', 'fab.com', 'sketchfab.com'];
-      return url.protocol === 'https:' && allowed.some(host => url.hostname === host || url.hostname.endsWith('.' + host)) ? url.href : '';
+      const official = allowed.some(host => url.hostname === host || url.hostname.endsWith('.' + host)) ||
+        url.hostname === 'cdn1-epicgames-1251447533.file.myqcloud.com';
+      return url.protocol === 'https:' && official ? url.href : '';
     } catch { return ''; }
   }
   function optimizedImageUrl(value, width, height) {

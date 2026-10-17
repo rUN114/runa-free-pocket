@@ -8,6 +8,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.*;
 
 public class OfficialImagesTest {
@@ -65,5 +68,26 @@ public class OfficialImagesTest {
         String local = images.register(source, true);
         Files.write(new File(directory, key(local)).toPath(), "<html>old failure</html>".getBytes(StandardCharsets.UTF_8));
         assertArrayEquals(jpeg, images.read(key(local), true));
+    }
+    @Test public void simultaneousFirstDownloadsCanCreateTheSameCacheDirectory() throws Exception {
+        File directory = Files.createTempDirectory("images").resolve("cache").toFile();
+        CountDownLatch ready = new CountDownLatch(4), release = new CountDownLatch(1);
+        OfficialImages images = new OfficialImages(directory, url -> {
+            ready.countDown();
+            try { if (!release.await(10, TimeUnit.SECONDS)) throw new IOException("Test download timed out"); }
+            catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new IOException(error); }
+            return jpeg;
+        });
+        var workers = Executors.newFixedThreadPool(4);
+        try {
+            var results = new ArrayList<java.util.concurrent.Future<byte[]>>();
+            for (int i = 0; i < 4; i++) {
+                String local = images.register("https://media.fab.com/" + i + ".jpg", true);
+                results.add(workers.submit(() -> images.read(key(local), true)));
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            release.countDown();
+            for (var result : results) assertArrayEquals(jpeg, result.get(10, TimeUnit.SECONDS));
+        } finally { release.countDown(); workers.shutdownNow(); }
     }
 }

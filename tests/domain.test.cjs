@@ -77,6 +77,9 @@ test('PC media preserves wide cover, screenshots, real price and catalog IDs', (
   assert.equal(parsed.description,'Real description');
 });
 test('image URLs accept official HTTPS CDNs and reject deceptive hosts and active schemes', () => {
+  assert.equal(D.imageUrl('https://cdn1-epicgames-1251447533.file.myqcloud.com/a.png'), 'https://cdn1-epicgames-1251447533.file.myqcloud.com/a.png');
+  assert.equal(D.imageUrl('https://other.file.myqcloud.com/a.png'), '');
+  assert.equal(D.imageUrl('https://cdn1-epicgames-1251447533.file.myqcloud.com.evil.test/a.png'), '');
   assert.equal(D.imageUrl('https://media.fab.com/a.png'),'https://media.fab.com/a.png');
   assert.equal(D.imageUrl('https://cdn1.epicgames.com.evil.test/a.png'),'');
   assert.equal(D.imageUrl('javascript:alert(1)'),'');
