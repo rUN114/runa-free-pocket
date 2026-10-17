@@ -8,28 +8,36 @@ function element(text, overrides = {}) {
   return {innerText:text,textContent:text,disabled:false,getBoundingClientRect:()=>({width:100,height:40}),
     querySelector:()=>null,querySelectorAll:()=>[],click(){this.clicks=(this.clicks||0)+1;},...overrides};
 }
-async function run({mode='check',category='pc',ctaText='Get',paymentText=null,library=[],fetchError=false} = {}) {
-  const messages = [], ticks = [];
+async function run({mode='check',category='pc',ctaText='Get',paymentText=null,library=[],fetchError=false,
+  libraryPages=null,failLibraryPage=-1,urlOverride=null,authBody=''} = {}) {
+  const messages = [], ticks = [], requests = [];
+  let libraryPage = 0;
   const cta = element(ctaText);
   const h1 = element('Test Game');
   const main = element('', {querySelector: selector => selector==='h1' ? h1 : cta});
   h1.parentElement = main;
   const submit = element('Place Order');
   const payment = paymentText === null ? null : element(paymentText, {querySelectorAll:selector=>selector.startsWith('button') ? [submit] : []});
-  const doc = {body:element(''),querySelector:selector=>selector==='main'?main:null,
+  const doc = {body:element(authBody),querySelector:selector=>selector==='main'?main:null,
     querySelectorAll:selector=>selector.includes('dialog')&&payment?[payment]:[]};
   const url = category==='fab' ? 'https://www.fab.com/listings/12345678-abcd-abcd-abcd-123456789012?lang=en' : 'https://store.epicgames.com/en-US/p/test-game';
-  const context = {console,URL,AbortController,location:new URL(url),document:doc,getComputedStyle:()=>({visibility:'visible',display:'block'}),
+  const context = {console,URL,AbortController,location:new URL(urlOverride || url),document:doc,getComputedStyle:()=>({visibility:'visible',display:'block'}),
     setInterval:fn=>ticks.push(fn),setTimeout:fn=>ticks.push(fn),addEventListener:()=>{},
     clearTimeout:()=>{},
     PocketStore:{postMessage:data=>messages.push(JSON.parse(data))},
-    fetch:async request=>({ok:!fetchError,status:fetchError?401:200,json:async()=>request.includes('/users/me')?{uid:'user-a'}:{results:library,cursors:{next:null}}})};
+    fetch:async request=>{
+      requests.push(request);
+      if (request.includes('/users/me')) return {ok:!fetchError,status:fetchError?401:200,json:async()=>({uid:'user-a',displayName:'Test Fab'})};
+      const index=libraryPage++;
+      return {ok:!fetchError&&index!==failLibraryPage,status:fetchError?401:index===failLibraryPage?503:200,
+        json:async()=>libraryPages?libraryPages[index]:{results:library,cursors:{next:null}}};
+    }};
   context.window = context; context.top = context;
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(base,'domain.js'),'utf8')+'\n'+fs.readFileSync(path.join(base,'automation.js'),'utf8'), context);
   context.runPocketTask({nonce:'test',mode,category,country:'CN',item:{id:'12345678-abcd-abcd-abcd-123456789012',url}});
   await ticks[0]();
-  return {messages,cta,submit,tick:ticks[0]};
+  return {messages,cta,submit,tick:ticks[0],requests};
 }
 test('Epic: main CTA confirms owned without touching checkout', async () => {
   const result = await run({ctaText:'In Library'});
@@ -66,4 +74,43 @@ test('Fab: an empty authenticated library means unowned', async () => {
 test('Fab: HTTP 401 is a failure, never an empty library or an unowned result', async () => {
   const result = await run({category:'fab',fetchError:true});
   assert.equal(result.messages[0].type,'error'); assert.match(result.messages[0].message,/401/);
+});
+test('Epic authorization accepts the code only on the exact official redirect page', async () => {
+  const code='test-authorization-code-1234567890';
+  const result=await run({mode:'auth',urlOverride:'https://www.epicgames.com/id/api/redirect',authBody:JSON.stringify({authorizationCode:code})});
+  assert.equal(result.messages[0].type,'authorized'); assert.equal(result.messages[0].code,code);
+  const unrelated=await run({mode:'auth',urlOverride:'https://www.epicgames.com.evil.test/id/api/redirect',authBody:JSON.stringify({authorizationCode:code})});
+  assert.equal(unrelated.messages.length,0);
+  const differentPage=await run({mode:'auth',urlOverride:'https://www.epicgames.com/id/login',authBody:JSON.stringify({authorizationCode:code})});
+  assert.equal(differentPage.messages.length,0);
+});
+test('Epic authorization error text never becomes a successful connection', async () => {
+  const result=await run({mode:'auth',urlOverride:'https://www.epicgames.com/id/api/redirect',authBody:'Incorrect response. Please refresh the page.'});
+  assert.ok(result.messages.every(message=>message.type!=='authorized'));
+});
+test('Fab sign-in confirms its own session before returning to the app', async () => {
+  const result=await run({mode:'auth',category:'fab'});
+  assert.equal(result.messages[0].type,'authenticated');
+  const signedOut=await run({mode:'auth',category:'fab',fetchError:true});
+  assert.ok(signedOut.messages.every(message=>message.type!=='authenticated'));
+});
+test('Fab batch ownership reads every page once and publishes the complete acquired set', async () => {
+  const result=await run({mode:'syncFab',category:'fab',libraryPages:[
+    {results:[{listing:{uid:'asset-a'}}],cursors:{next:'page-2'}},
+    {results:[{listing:{uid:'asset-b'}}],cursors:{next:null}}]});
+  const batch=result.messages.find(message=>message.type==='ownership');
+  assert.deepEqual([...batch.owned],['asset-a','asset-b']);
+  assert.equal(result.requests.filter(url=>url.startsWith('/i/library/search')).length,2);
+});
+test('Fab pagination failure does not publish incomplete ownership as a completed library', async () => {
+  const result=await run({mode:'syncFab',category:'fab',failLibraryPage:1,libraryPages:[
+    {results:[{listing:{uid:'asset-a'}}],cursors:{next:'page-2'}}]});
+  assert.ok(result.messages.some(message=>message.type==='error'));
+  assert.ok(!result.messages.some(message=>message.type==='ownership'));
+});
+test('Fab repeated cursors fail explicitly instead of repeatedly loading the library', async () => {
+  const result=await run({mode:'syncFab',category:'fab',libraryPages:[
+    {results:[],cursors:{next:'again'}},{results:[],cursors:{next:'again'}}]});
+  assert.ok(result.messages.some(message=>message.type==='error'&&/重复/.test(message.message)));
+  assert.ok(!result.messages.some(message=>message.type==='ownership'));
 });

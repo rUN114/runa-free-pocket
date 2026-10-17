@@ -12,7 +12,7 @@ final class EpicPublicApi {
     static String promotions(String country) throws IOException {
         // The promotion feed is public. Native HTTP avoids depending on storefront CORS policy.
         URL url = new URL("https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
-                + "?locale=en-US&country=" + country + "&allowCountries=" + country);
+                + "?locale=zh-CN&country=" + country + "&allowCountries=" + country);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setConnectTimeout(20000);
         connection.setReadTimeout(25000);

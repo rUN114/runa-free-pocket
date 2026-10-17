@@ -1,74 +1,213 @@
 'use strict';
-let state = {items: [], country: 'CN', updated: {}, message: '首次使用：登录账号，然后刷新活动。', busy: false};
+let state = {items: [], country: 'CN', updated: {}, message: '正在读取本期免费内容…', busy: false, epicAccount: {}, fabAccount: {}};
 let category = 'pc';
 const selected = new Set();
-const titles = {pc: '本周免费游戏', android: '安卓限时免费', fab: 'Fab 限时免费素材'};
-const descriptions = {pc: '读取 Epic 官方活动，领取后留在你的游戏库', android: '安卓版本单独领取，以账号地区和商品页面为准', fab: '通常每两周更新，以 Fab 当前活动为准'};
-const statusLabels = {unknown: '待核实', owned: '已拥有', unowned: '未拥有', expired: '当前不可领', error: '核实失败'};
-const platformLabels = {pc: '电脑游戏', android: 'Android', fab: 'Fab 素材'};
 const $ = id => document.getElementById(id);
+const platforms = {pc: '电脑游戏', android: 'Android 手机游戏', fab: 'Fab 素材'};
+const statuses = {unknown: '未能确认', owned: '已拥有', unowned: '未拥有', partial: '部分已拥有', expired: '活动已结束', error: '同步失败'};
+
+function element(tag, className, text) {
+  const result = document.createElement(tag);
+  if (className) result.className = className;
+  if (text !== undefined) result.textContent = text;
+  return result;
+}
+
 function command(action, data = {}) {
-  if (!window.PocketApp) { state.message = '这是界面预览；登录和领取请在安卓 APK 中使用。'; render(); return; }
+  if (!window.PocketApp) {
+    state.message = '当前是界面预览。登录、同步与领取请在安卓 APK 中使用。';
+    render();
+    return;
+  }
   PocketApp.postMessage(JSON.stringify({action, ...data}));
 }
-function node(tag, className, text) {
-  const element = document.createElement(tag);
-  if (className) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
+
+function localTime(value) {
+  return new Date(value).toLocaleString('zh-CN', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'});
 }
-function shown() { return state.items.filter(item => item.category === category); }
+
+function deadline(item) {
+  if (!item.end) return '以官网活动为准';
+  const left = Date.parse(item.end) - Date.now();
+  if (left <= 0) return '活动已结束';
+  if (left >= 86400000) return '剩余 ' + Math.ceil(left / 86400000) + ' 天';
+  if (left >= 3600000) return '剩余 ' + Math.ceil(left / 3600000) + ' 小时';
+  return '剩余 ' + Math.max(1, Math.ceil(left / 60000)) + ' 分钟';
+}
+
+function currentItems() { return state.items.filter(item => item.category === category); }
+function available(items) { return PocketDomain.queue(items, items.map(item => item.key)); }
+function accountForCategory() { return category === 'fab' ? state.fabAccount || {} : state.epicAccount || {}; }
+
+function cover(item, className) {
+  const url = PocketDomain.coverUrl(item.cover);
+  if (!url) return element('div', 'cover-fallback', item.mediaError || '暂无官方预览图');
+  const image = element('img', className);
+  image.src = url;
+  image.alt = item.title + ' 官方封面';
+  image.referrerPolicy = 'no-referrer';
+  image.decoding = 'async';
+  image.addEventListener('error', () => image.replaceWith(element('div', 'cover-fallback', '封面暂未加载，点击查看详情')), {once: true});
+  return image;
+}
+
+function renderCard(item) {
+  const card = element('article', 'game-card');
+  card.dataset.key = item.key;
+  const preview = element('button', 'cover-button');
+  preview.setAttribute('aria-label', '查看 ' + item.title + ' 的详情与图片');
+  preview.append(cover(item, ''));
+  preview.onclick = () => openDetail(item.key);
+  const statusText = statuses[item.status] || statuses.unknown;
+  const ownership = element('span', 'ownership ' + item.status, statusText + (item.cached && item.status === 'owned' ? ' · 缓存' : ''));
+  const info = element('div', 'card-info');
+  const titleRow = element('div', 'card-title');
+  const label = element('label', 'card-select');
+  const check = element('input');
+  check.type = 'checkbox';
+  check.checked = selected.has(item.key);
+  check.disabled = state.busy || !available([item]).length;
+  check.setAttribute('aria-label', '选择领取 ' + item.title);
+  check.onchange = () => {
+    if (check.checked) selected.add(item.key); else selected.delete(item.key);
+    updateSelection();
+  };
+  label.append(check);
+  titleRow.append(label, element('h3', '', item.title));
+  const meta = element('div', 'card-meta');
+  if (item.originalPrice) meta.append(element('del', '', item.originalPrice.replace(/^CN¥/, '¥')));
+  meta.append(element('span', 'free-price', '限时免费'), element('span', 'deadline', deadline(item)));
+  info.append(titleRow, meta);
+  if (item.checkedAt) info.append(element('p', 'card-hint', (item.cached ? '上次同步 ' : '已核实 ') + localTime(item.checkedAt)));
+  else if (item.status === 'error') info.append(element('p', 'card-hint', '未把读取失败当作未拥有'));
+  card.append(preview, element('div', 'card-shade'), element('span', 'platform-chip', platforms[category]), ownership, info);
+  return card;
+}
+
+function updateSelection() {
+  const candidates = available(currentItems());
+  const chosen = candidates.filter(item => selected.has(item.key));
+  $('select-all').checked = candidates.length > 0 && chosen.length === candidates.length;
+  $('select-all').indeterminate = chosen.length > 0 && chosen.length < candidates.length;
+  $('select-all').disabled = state.busy || !candidates.length;
+  $('selection-count').textContent = chosen.length ? '已选择 ' + chosen.length + ' 项' : '未选择';
+  $('claim').disabled = state.busy || !chosen.length;
+  const connected = accountForCategory().connected;
+  if (state.busy) $('claim').textContent = '处理中…';
+  else $('claim').textContent = connected ? '领取所选' : '登录并领取';
+}
+
 function render() {
-  $('category-title').textContent = titles[category];
-  $('source-note').textContent = descriptions[category];
+  const current = currentItems();
+  const account = accountForCategory();
+  $('category-title').textContent = category === 'fab' ? '限时免费素材' : '当前限免';
+  $('item-count').textContent = '共 ' + current.length + ' 项';
+  let connection = category === 'fab' ? '未连接 Fab' : '未连接 Epic';
+  if (account.connected) connection = account.displayName || '账号已连接';
+  if (account.error) connection += ' · 同步失败';
+  $('connection').textContent = connection;
+  $('connection').classList.toggle('connected', !!account.connected && !account.error);
+  $('sync-time').textContent = account.checkedAt ? '拥有状态同步于 ' + localTime(account.checkedAt) : '连接后自动核实拥有状态';
   $('message').textContent = state.message;
   $('country').value = state.country;
-  document.querySelectorAll('[data-tab]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.tab === category)));
-  $('items').replaceChildren();
-  const list = shown();
-  if (!list.length) {
-    const empty = node('section', 'empty');
-    empty.append(node('div', 'empty-mark', '▱'), node('h3', '', state.updated[category] ? '当前没有可领取的活动' : '把本期免费收进口袋'), node('p', '', state.updated[category] ? '可以刷新活动，或在官方网页查看。' : '点击“刷新活动”，读取官方免费内容。'));
+  if (account.error) $('account').textContent = '检查账号';
+  else $('account').textContent = account.connected ? '账号已连接' : '连接账号';
+  $('epic-name').textContent = state.epicAccount?.connected ? state.epicAccount.displayName : '未连接';
+  $('fab-name').textContent = state.fabAccount?.connected ? state.fabAccount.displayName : '未连接';
+  $('login-epic').textContent = state.epicAccount?.connected ? '重新连接' : '连接 Epic';
+  $('login-fab').textContent = state.fabAccount?.connected ? '重新连接' : '连接 Fab';
+  for (const button of document.querySelectorAll('[data-tab]')) {
+    button.setAttribute('aria-selected', String(button.dataset.tab === category));
+    button.disabled = state.busy;
+    const count = state.items.filter(item => item.category === button.dataset.tab).length;
+    $('count-' + button.dataset.tab).textContent = state.updated[button.dataset.tab] ? count : '—';
+  }
+  for (const id of ['account', 'refresh', 'sync', 'country', 'login-epic', 'login-fab']) $(id).disabled = state.busy;
+  $('owned-count').textContent = '已拥有 ' + current.filter(item => item.status === 'owned').length + ' 项';
+  const shown = $('hide-owned').checked ? current.filter(item => item.status !== 'owned') : current;
+  $('items').replaceChildren(...shown.map(renderCard));
+  if (!shown.length) {
+    const empty = element('div', 'empty');
+    let title = '读取本期免费内容';
+    let text = '活动从官方商城获取，点击刷新可重试。';
+    if (current.length && $('hide-owned').checked) { title = '本期内容都已拥有'; text = '取消“隐藏已拥有”可以查看已领取内容。'; }
+    else if (state.updated[category]) { title = '当前没有可领取的活动'; text = '活动会定期更新，以官方商城为准。'; }
+    empty.append(element('h3', '', title), element('p', '', text));
     $('items').append(empty);
   }
-  for (const item of list) {
-    const card = node('article', 'item'); card.dataset.category = category;
-    const tile = node('div', 'tile', item.title.substring(0, 1).toUpperCase()); tile.setAttribute('aria-hidden', 'true');
-    const body = node('div', 'item-body');
-    let meta = platformLabels[category];
-    if (item.end) meta += ' · ' + new Date(item.end).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) + ' 截止';
-    body.append(node('h3', '', item.title), node('p', 'item-meta', meta), node('span', 'status ' + item.status, statusLabels[item.status] || '待核实'));
-    const actions = node('div', 'item-actions');
-    const view = node('button', '', '查看官方页面'); view.disabled = state.busy; view.onclick = () => command('open', {key: item.key});
-    actions.append(view); body.append(actions);
-    const checkLabel = node('label', 'item-check');
-    const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.checked = selected.has(item.key);
-    checkbox.disabled = item.status === 'owned' || state.busy;
-    checkbox.setAttribute('aria-label', '选择 ' + item.title);
-    checkbox.onchange = () => { checkbox.checked ? selected.add(item.key) : selected.delete(item.key); render(); };
-    checkLabel.append(checkbox); card.append(tile, body, checkLabel); $('items').append(card);
-  }
-  const available = list.filter(item => item.status !== 'owned');
-  const count = available.filter(item => selected.has(item.key)).length;
-  $('select-all').checked = available.length > 0 && count === available.length;
-  $('select-all').indeterminate = count > 0 && count < available.length;
-  $('select-all').disabled = !available.length || state.busy;
-  $('selection-count').textContent = count ? '已选择 ' + count + ' 项' : '尚未选择';
-  $('claim').disabled = count === 0 || state.busy;
-  $('claim').textContent = state.busy ? '正在处理…' : '一键领取';
-  for (const id of ['login','refresh','sync','country']) $(id).disabled = state.busy;
-  $('updated').textContent = state.updated[category] ? '活动更新于 ' + new Date(state.updated[category]).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '尚未读取活动';
+  $('updated').textContent = state.updated[category] ? '活动更新于 ' + localTime(state.updated[category]) : '活动尚未更新';
+  updateSelection();
 }
+
+function openDetail(key) {
+  const item = state.items.find(entry => entry.key === key);
+  if (!item) return;
+  const body = element('div', 'detail-body');
+  const title = element('h2', '', item.title);
+  title.id = 'detail-title';
+  body.append(title, element('p', 'detail-status', (statuses[item.status] || statuses.unknown) + (item.checkedAt ? ' · ' + localTime(item.checkedAt) : '')));
+  if (item.statusReason) body.append(element('p', 'dialog-note', item.statusReason));
+  const gallery = element('div', 'detail-gallery');
+  for (const [index, src] of (item.screenshots || []).entries()) {
+    const url = PocketDomain.previewUrl(src);
+    if (!url) continue;
+    const image = element('img');
+    image.src = url;
+    image.alt = item.title + ' 官方预览图 ' + (index + 1);
+    image.loading = 'lazy';
+    image.referrerPolicy = 'no-referrer';
+    gallery.append(image);
+  }
+  if (gallery.children.length) body.append(element('p', 'gallery-label', '官方预览图 · ' + gallery.children.length + ' 张，可横向滑动'), gallery);
+  body.append(element('p', 'detail-description', item.description || '当前官方列表未提供简介，可在商品页面查看完整说明。'));
+  if (item.publisher) body.append(element('p', 'dialog-note', '发行方 / 作者：' + item.publisher));
+  body.append(element('p', 'dialog-note', item.end ? '领取截止：' + new Date(item.end).toLocaleString('zh-CN') : '领取时间以官方活动页面为准'));
+  const official = element('button', 'primary', '查看官方商品页面');
+  official.disabled = state.busy;
+  official.onclick = () => { closeDetail(); command('open', {key}); };
+  body.append(official);
+  $('detail-content').replaceChildren(cover(item, 'detail-cover'), body);
+  $('detail-content').dataset.key = key;
+  $('detail-dialog').showModal();
+}
+
+function closeDetail() {
+  if ($('detail-dialog').open) { $('detail-dialog').close(); return true; }
+  if ($('account-dialog').open) { $('account-dialog').close(); return true; }
+  return false;
+}
+window.closeDetail = closeDetail;
 window.receiveState = next => {
   state = next;
-  for (const key of selected) if (!state.items.some(item => item.key === key && item.status !== 'owned')) selected.delete(key);
+  for (const key of selected) if (!available(state.items).some(item => item.key === key)) selected.delete(key);
+  render();
+  if ($('detail-dialog').open) {
+    const item = state.items.find(entry => entry.key === $('detail-content').dataset.key);
+    if (item) $('detail-content').querySelector('.detail-status').textContent = (statuses[item.status] || statuses.unknown) + (item.checkedAt ? ' · ' + localTime(item.checkedAt) : '');
+    $('detail-content').querySelector('.primary').disabled = state.busy;
+  }
+};
+for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => {
+  category = button.dataset.tab;
+  selected.clear();
+  render();
+  if (!state.updated[category] || Date.now() - state.updated[category] > 300000) command('refresh', {category});
+  else if (accountForCategory().connected && currentItems().some(item => item.status === 'unknown' || item.cached)) command('check', {category});
+};
+$('hide-owned').onchange = render;
+$('select-all').onchange = event => {
+  for (const item of available(currentItems())) {
+    if (event.target.checked) selected.add(item.key); else selected.delete(item.key);
+  }
   render();
 };
-document.querySelectorAll('[data-tab]').forEach(button => button.onclick = () => { category = button.dataset.tab; selected.clear(); render(); });
-$('select-all').onchange = event => { for (const item of shown().filter(x => x.status !== 'owned')) event.target.checked ? selected.add(item.key) : selected.delete(item.key); render(); };
-$('login').onclick = () => command('login', {category});
+$('account').onclick = () => $('account-dialog').showModal();
+$('close-account').onclick = closeDetail;
+$('close-detail').onclick = closeDetail;
 $('refresh').onclick = () => command('refresh', {category});
-$('sync').onclick = () => command('check', {keys: shown().map(item => item.key)});
-$('claim').onclick = () => command('claim', {keys: PocketDomain.queue(state.items, [...selected]).map(item => item.key)});
-$('country').onchange = event => command('country', {country: event.target.value});
+$('sync').onclick = () => command('check', {category});
+$('claim').onclick = () => command('claim', {category, keys: PocketDomain.queue(currentItems(), [...selected]).map(item => item.key)});
+$('login-epic').onclick = () => { closeDetail(); command('login', {category: category === 'android' ? 'android' : 'pc'}); };
+$('login-fab').onclick = () => { closeDetail(); command('login', {category: 'fab'}); };
+$('country').onchange = event => { closeDetail(); command('country', {country: event.target.value}); };
 render();

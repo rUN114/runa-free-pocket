@@ -63,3 +63,86 @@ test('Android: future and expired free price entries are not offered', () => {
   purchase.discount={discountEndDate:'2026-10-16T12:00:00Z'};
   assert.equal(D.parseMobile(data,now).length,0);
 });
+test('PC media preserves wide cover, screenshots, real price and catalog IDs', () => {
+  const item=game({items:[{namespace:'space-1',id:'catalog-1'}],description:'<p>Real description</p>',
+    keyImages:[{type:'OfferImageWide',url:'https://cdn1.epicgames.com/cover.png'},
+      {type:'featuredMedia',url:'https://cdn1.epicgames.com/screen.jpg'},
+      {type:'heroCarouselVideo',url:'com.epicgames.video.qs://video'}],
+    price:{totalPrice:{discountPrice:0,fmtPrice:{originalPrice:'CN¥40.00'}}}});
+  const parsed=D.parsePc(pc(item),now)[0];
+  assert.equal(parsed.cover,'https://cdn1.epicgames.com/cover.png');
+  assert.deepEqual(parsed.screenshots,['https://cdn1.epicgames.com/screen.jpg']);
+  assert.equal(parsed.originalPrice,'CN¥40.00');
+  assert.deepEqual(parsed.catalogItems,[{namespace:'space-1',id:'catalog-1'}]);
+  assert.equal(parsed.description,'Real description');
+});
+test('image URLs accept official HTTPS CDNs and reject deceptive hosts and active schemes', () => {
+  assert.equal(D.imageUrl('https://media.fab.com/a.png'),'https://media.fab.com/a.png');
+  assert.equal(D.imageUrl('https://cdn1.epicgames.com.evil.test/a.png'),'');
+  assert.equal(D.imageUrl('javascript:alert(1)'),'');
+  assert.equal(D.imageUrl('http://cdn1.epicgames.com/a.png'),'');
+});
+test('owned matching uses namespace + catalog item, not the promotional offer ID', () => {
+  const items=[{key:'offer-1',category:'pc',catalogItems:[{namespace:'ns',id:'catalog-1'}]}];
+  const snapshot={accountId:'account-a',checkedAt:now,owned:[{namespace:'ns',id:'offer-1'}]};
+  assert.equal(D.applyOwnership(items,snapshot)[0].status,'unowned');
+  snapshot.owned=[{namespace:'ns',id:'catalog-1'}];
+  assert.equal(D.applyOwnership(items,snapshot)[0].status,'owned');
+  snapshot.owned=[{namespace:'another-namespace',id:'catalog-1'}];
+  assert.equal(D.applyOwnership(items,snapshot)[0].status,'unowned');
+});
+test('PC and Android variants of the same title have distinct ownership', () => {
+  const items=[{key:'pc',category:'pc',catalogItems:[{namespace:'same',id:'pc-item'}]},
+    {key:'android',category:'android',catalogItems:[{namespace:'same',id:'android-item'}]}];
+  const result=D.applyOwnership(items,{accountId:'account-a',checkedAt:now,owned:[{namespace:'same',id:'pc-item'}]});
+  assert.deepEqual(result.map(item=>item.status),['owned','unowned']);
+});
+test('bundle ownership requires all parts and identifies partially owned bundles', () => {
+  const items=[{key:'bundle',category:'pc',catalogItems:[{namespace:'ns',id:'a'},{namespace:'ns',id:'b'}]}];
+  const snapshot={accountId:'account-a',checkedAt:now,owned:[{namespace:'ns',id:'a'}]};
+  assert.equal(D.applyOwnership(items,snapshot)[0].status,'partial');
+  snapshot.owned.push({namespace:'ns',id:'b'});
+  assert.equal(D.applyOwnership(items,snapshot)[0].status,'owned');
+});
+test('cached positive ownership survives, but missing cached IDs do not mean unowned', () => {
+  const items=[{category:'pc',catalogItems:[{namespace:'ns',id:'a'}]},
+    {category:'android',catalogItems:[{namespace:'ns',id:'b'}]}];
+  const result=D.applyOwnership(items,{accountId:'account-a',checkedAt:now,owned:[{namespace:'ns',id:'a'}]},false);
+  assert.equal(result[0].status,'owned'); assert.equal(result[0].cached,true);
+  assert.equal(result[1].status,'unknown');
+});
+test('unknown identity, malformed ownership, and missing product IDs never become false unowned', () => {
+  assert.throws(()=>D.applyOwnership([],{owned:[],checkedAt:now}),/身份/);
+  assert.throws(()=>D.applyOwnership([],{accountId:'a',owned:{},checkedAt:now}),/格式/);
+  const result=D.applyOwnership([{category:'pc',catalogItems:[]}],{accountId:'a',owned:[],checkedAt:now});
+  assert.equal(result[0].status,'unknown');
+});
+test('switching accounts replaces previous ownership instead of accumulating it', () => {
+  const item={category:'pc',catalogItems:[{namespace:'ns',id:'a'}]};
+  const owned=D.applyOwnership([item],{accountId:'a',checkedAt:now,owned:[{namespace:'ns',id:'a'}]});
+  const other=D.applyOwnership(owned,{accountId:'b',checkedAt:now+1000,owned:[]});
+  assert.equal(other[0].status,'unowned'); assert.equal(other[0].ownershipAccount,'b');
+});
+test('Fab ownership is kept separate from Epic game entitlements', () => {
+  const asset={category:'fab',status:'owned'};
+  assert.equal(D.applyOwnership([asset],{accountId:'a',checkedAt:now,owned:[]})[0],asset);
+});
+test('expired giveaways and owned items are excluded from the actual claim queue', () => {
+  const items=[{key:'expired',status:'unowned',end:'2020-01-01T00:00:00Z'},
+    {key:'owned',status:'owned'},{key:'ready',status:'unowned'}];
+  assert.deepEqual(D.queue(items,items.map(i=>i.key)).map(i=>i.key),['ready']);
+});
+test('updating cached metadata for one platform preserves fresh ownership on the other platform', () => {
+  const items=[{key:'pc',category:'pc',status:'unowned',catalogItems:[{namespace:'ns',id:'a'}]},
+    {key:'android',category:'android',catalogItems:[{namespace:'ns',id:'b'}]}];
+  const result=D.applyOwnership(items,{accountId:'a',checkedAt:now,owned:[{namespace:'ns',id:'b'}]},false,'android');
+  assert.equal(result[0],items[0]); assert.equal(result[0].status,'unowned');
+  assert.equal(result[1].status,'owned');
+});
+test('mobile covers use the verified Epic thumbnail endpoint without rewriting signed or other-provider images', () => {
+  const thumb=new URL(D.coverUrl('https://cdn1.epicgames.com/game/cover.png'));
+  assert.equal(thumb.searchParams.get('w'),'720'); assert.equal(thumb.searchParams.get('h'),'405');
+  assert.equal(D.coverUrl('https://cdn1.epicgames.com/game/cover.png?signature=example'),
+    'https://cdn1.epicgames.com/game/cover.png?signature=example');
+  assert.equal(D.coverUrl('https://media.fab.com/cover.png'),'https://media.fab.com/cover.png');
+});

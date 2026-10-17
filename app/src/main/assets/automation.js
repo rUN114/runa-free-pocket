@@ -2,6 +2,8 @@ function runPocketTask(task) {
   'use strict';
   const D = PocketDomain;
   let finished = false, busy = false, clickedGet = false, ordered = false, lastNotice = '';
+  let authChecked = false;
+  let fabOwned = null;
   const send = (type, data = {}) => PocketStore.postMessage(JSON.stringify({nonce: task.nonce, type, ...data}));
   const finish = (type, data) => { if (!finished) { finished = true; send(type, data); } };
   const notice = text => { if (text !== lastNotice) { lastNotice = text; send('waiting', {message: text}); } };
@@ -26,12 +28,17 @@ function runPocketTask(task) {
     let items;
     if (task.category === 'fab') {
       items = D.parseFab(await json('/i/blades/free_content_blade'));
+      await Promise.all(items.map(async item => {
+        if (item.cover) return;
+        try { Object.assign(item, D.fabDetail(await json('/i/listings/' + item.id))); }
+        catch { item.mediaError = '素材图片暂未能读取，可在官方页面查看'; }
+      }));
     } else if (task.category === 'android') {
       items = D.parseMobile(await json('https://egs-platform-service.store.epicgames.com/api/v2/public/discover/home?count=10&country=' + task.country + '&locale=en&platform=android&start=0&store=EGS'));
     } else throw new Error('此网页任务不支持该活动分类');
     finish('catalogue', {items});
   }
-  async function fabOwnership() {
+  async function fabLibrary() {
     const me = await json('/i/users/me');
     if (!me || typeof me !== 'object') throw new Error('Fab 登录状态无法确认');
     const owned = new Set(), cursors = new Set();
@@ -43,17 +50,37 @@ function runPocketTask(task) {
         if (entry.uid) owned.add(entry.uid);
         if (entry.listing?.uid) owned.add(entry.listing.uid);
       }
-      if (owned.has(task.item.id)) return true;
       const next = data.cursors?.next;
       if (!next) {
         if (data.results.length === 100 && !data.cursors) throw new Error('素材库缺少分页信息，暂不能判定未拥有');
-        return false;
+        return {owned, displayName: me.displayName || me.username || me.sellerName || 'Fab 账号'};
       }
       if (cursors.has(next)) throw new Error('素材库分页重复，暂不能确认拥有状态');
       cursors.add(next);
       url = '/i/library/search?count=100&source=acquired&cursor=' + encodeURIComponent(next);
     }
     throw new Error('素材库分页数量超出本次核实范围');
+  }
+  async function fabOwnership() { return (await fabLibrary()).owned.has(task.item.id); }
+  async function auth() {
+    if (task.category === 'fab' && location.hostname === 'www.fab.com') {
+      if (authChecked) return;
+      authChecked = true;
+      try {
+        const me = await json('/i/users/me');
+        if (!me || typeof me !== 'object' || Array.isArray(me)) throw new Error('Fab 登录状态无法确认');
+        finish('authenticated', {displayName: me.displayName || me.username || me.sellerName || 'Fab 账号'});
+      } catch { notice('请完成 Fab 官方登录及首次协议，完成后将自动刷新并同步素材库'); }
+      return;
+    }
+    if (task.category !== 'fab' && location.hostname === 'www.epicgames.com' && location.pathname === '/id/api/redirect') {
+      try {
+        const data = JSON.parse(document.body.innerText);
+        if (typeof data.authorizationCode === 'string' && /^[a-zA-Z0-9_-]{16,1024}$/.test(data.authorizationCode)) {
+          finish('authorized', {code: data.authorizationCode});
+        } else notice('未取得库存授权，请在官方登录页面完成账号验证');
+      } catch { notice('正在等待 Epic 官方授权完成'); }
+    }
   }
   function productScope() {
     const main = document.querySelector('main');
@@ -81,10 +108,10 @@ function runPocketTask(task) {
     const scope = productScope();
     if (!scope) return;
     if (task.category === 'fab') {
-      const owned = await fabOwnership();
-      if (owned) { finish('result', {status: 'owned'}); return; }
-      if (task.mode === 'check') { finish('result', {status: 'unowned'}); return; }
       if (clickedGet) return;
+      if (fabOwned === null) fabOwned = await fabOwnership();
+      if (fabOwned) { finish('result', {status: 'owned'}); return; }
+      if (task.mode === 'check') { finish('result', {status: 'unowned'}); return; }
       const current = D.parseFab(await json('/i/blades/free_content_blade'));
       if (!current.some(x => x.id === task.item.id)) { finish('result', {status: 'expired', message: '该素材已不在限时免费活动中'}); return; }
       const buy = buttons(scope).find(b => /^(buy now|立即购买)$/i.test(label(b)));
@@ -110,12 +137,10 @@ function runPocketTask(task) {
     const inPaymentFrame = location.hostname === 'www.epicgames.com' && location.pathname.startsWith('/payment/');
     const scope = inPaymentFrame ? document.body : [...document.querySelectorAll('[role="dialog"], dialog')].find(visible);
     if (!scope) return;
-    if (ordered) {
-      const heading = [...scope.querySelectorAll('h1,h2,h3')].find(el => visible(el) &&
-        /^(thank you[!.]?|thanks for (your purchase|buying)[!.]?|order complete[!.]?|感谢购买[！!]?|订单完成[！!]?)$/i.test(label(el)));
-      if (heading) finish('checkoutComplete');
-      return;
-    }
+    const heading = [...scope.querySelectorAll('h1,h2,h3')].find(el => visible(el) &&
+      /^(thank you[!.]?|thanks for (your purchase|buying)[!.]?|order complete[!.]?|感谢购买[！!]?|订单完成[！!]?)$/i.test(label(el)));
+    if (heading) { finish('checkoutComplete'); return; }
+    if (ordered) return;
     const submit = buttons(scope).find(b => /^(place order|add to library|下单|下订单|加入库|添加到库)$/i.test(label(b)));
     if (!submit || submit.disabled) return;
     const free = D.zeroTotal(scope.innerText);
@@ -138,9 +163,14 @@ function runPocketTask(task) {
       const isTop = window === window.top;
       const fab = location.hostname === 'www.fab.com';
       const epic = location.hostname === 'store.epicgames.com';
-      if (isTop && task.mode === 'discover' && ((task.category === 'fab' && fab) || (task.category !== 'fab' && epic))) {
+      if (isTop && task.mode === 'auth') {
+        await auth();
+      } else if (isTop && task.mode === 'syncFab' && fab) {
+        const library = await fabLibrary();
+        finish('ownership', {owned: [...library.owned], checkedAt: Date.now(), displayName: library.displayName});
+      } else if (isTop && task.mode === 'discover' && ((task.category === 'fab' && fab) || (task.category !== 'fab' && epic))) {
         await discover();
-      } else if (task.mode !== 'discover') {
+      } else if (task.mode === 'check' || task.mode === 'claim') {
         if (isTop && ((task.category === 'fab' && fab) || (task.category !== 'fab' && epic))) await inspectProduct();
         checkout();
       }
