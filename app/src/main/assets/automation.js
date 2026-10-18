@@ -100,7 +100,16 @@ function runPocketTask(task) {
       const candidates = buttons(parent).filter(b => /^(get|in library|owned|获取|领取|已在库中|已拥有)$/i.test(label(b)));
       if (candidates.length === 1) return candidates[0];
     }
-    return null;
+    // The current mobile layout separates the purchase card from the title header.
+    // Pair the action with this product's Wishlist control, and refuse ambiguous cards.
+    const actions = new Set();
+    for (const section of scope.querySelectorAll('section')) {
+      const controls = buttons(section);
+      if (!controls.some(button => /^(wishlist|add to wishlist|加入愿望单|添加至愿望单|願望清單)$/i.test(label(button)))) continue;
+      const candidates = controls.filter(button => /^(get|in library|owned|获取|领取|已在库中|已拥有)$/i.test(label(button)));
+      if (candidates.length === 1) actions.add(candidates[0]);
+    }
+    return actions.size === 1 ? [...actions][0] : null;
   }
   async function inspectProduct() {
     const path = url => new URL(url).pathname.replace(/^\/[a-z]{2}-[A-Z]{2}(?=\/)/, '');
@@ -108,7 +117,14 @@ function runPocketTask(task) {
     const scope = productScope();
     if (!scope) return;
     if (task.category === 'fab') {
-      if (clickedGet) return;
+      if (clickedGet) {
+        // Fab closes its checkout on success and replaces Buy now with this library link.
+        // It only requests a fresh acquired-library check; the link does not prove ownership.
+        const libraryLink = [...scope.querySelectorAll('a[href]')].find(link => visible(link) &&
+          /^view in my library$/i.test(label(link)) && new URL(link.href, location.href).pathname === '/library');
+        if (libraryLink) finish('checkoutComplete');
+        return;
+      }
       if (fabOwned === null) fabOwned = await fabOwnership();
       if (fabOwned) { finish('result', {status: 'owned'}); return; }
       if (task.mode === 'check') { finish('result', {status: 'unowned'}); return; }
@@ -119,6 +135,7 @@ function runPocketTask(task) {
       if (!buy || !freeLabel) { notice('未能确认当前素材免费；请查看官方页面后手动处理'); return; }
       clickedGet = true;
       buy.click();
+      notice('正在打开 Fab 零元结算；首次使用如出现许可协议，请阅读并确认');
     } else {
       const cta = epicCta(scope);
       if (!cta) { notice('正在等待商品主按钮；若网页要求登录或验证，请先完成'); return; }
@@ -135,15 +152,22 @@ function runPocketTask(task) {
   function checkout() {
     if (finished || task.mode !== 'claim') return;
     const inPaymentFrame = location.hostname === 'www.epicgames.com' && location.pathname.startsWith('/payment/');
-    const scope = inPaymentFrame ? document.body : [...document.querySelectorAll('[role="dialog"], dialog')].find(visible);
+    const inStoreCheckout = location.hostname === 'store.epicgames.com' && location.pathname === '/checkout';
+    const inFabCheckout = location.hostname === 'www.fab.com' && location.pathname === '/payment/web/purchase';
+    const scope = (inPaymentFrame || inStoreCheckout || inFabCheckout) ? document.body : [...document.querySelectorAll('[role="dialog"], dialog')].find(visible);
     if (!scope) return;
     const heading = [...scope.querySelectorAll('h1,h2,h3')].find(el => visible(el) &&
       /^(thank you[!.]?|thanks for (your purchase|buying)[!.]?|order complete[!.]?|感谢购买[！!]?|订单完成[！!]?)$/i.test(label(el)));
-    if (heading) { finish('checkoutComplete'); return; }
+    const receiptText = scope.innerText.replace(/\s+/g, ' ');
+    const currentReceipt = /\bit['’]s all yours\b/i.test(receiptText) && /thanks for your order[.!]?/i.test(receiptText) &&
+      buttons(scope).some(button => /^continue browsing$/i.test(label(button)));
+    if (heading || currentReceipt) { finish('checkoutComplete'); return; }
     if (ordered) return;
     const submit = buttons(scope).find(b => /^(place order|add to library|下单|下订单|加入库|添加到库)$/i.test(label(b)));
     if (!submit || submit.disabled) return;
-    const free = D.zeroTotal(scope.innerText);
+    let free = D.zeroTotal(scope.innerText);
+    if (free === null && (inStoreCheckout || inFabCheckout) && /^(add to library|加入库|添加到库)$/i.test(label(submit)))
+      free = D.zeroFreeCheckout(scope.innerText);
     if (free !== true) {
       if (free === false) finish('blocked', {message: '订单合计不为零，已停止自动下单'});
       else notice('未能读取明确的零元合计。请查看订单，必要时手动领取，再点“核实结果”');

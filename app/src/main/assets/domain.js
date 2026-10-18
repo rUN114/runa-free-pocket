@@ -133,7 +133,12 @@
         statusReason: reason};
     });
   }
-  // A missing/unreadable total never grants permission to order. Subtotal and savings are excluded.
+  // Order totals and explicit free-checkout amounts are checked separately; savings are not totals.
+  function moneyValue(text, requireCurrency = false) {
+    const amount = text.match(/^(?:(USD|EUR|GBP|CNY|HKD|JPY|RMB|US\$|HK\$|CN¥|[$€£¥￥])\s*)?([0-9]+(?:[.,][0-9]{1,2})?)(?:\s*(USD|EUR|GBP|CNY|HKD|JPY|RMB|[$€£¥￥]))?$/i);
+    if (!amount || (requireCurrency && !amount[1] && !amount[3])) return null;
+    return Number(amount[2].replace(',', '.'));
+  }
   function zeroTotal(text) {
     const lines = String(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const totals = [];
@@ -142,8 +147,18 @@
       if (label) totals.push(label[1] || lines[i + 1] || '');
     }
     if (totals.length !== 1) return null;
-    const amount = totals[0].match(/^(?:(?:USD|EUR|GBP|CNY|HKD|JPY|RMB|US\$|HK\$|CN¥|[$€£¥￥])\s*)?([0-9]+(?:[.,][0-9]{1,2})?)(?:\s*(?:USD|EUR|GBP|CNY|HKD|JPY|RMB|[$€£¥￥]))?$/i);
-    return amount ? Number(amount[1].replace(',', '.')) === 0 : null;
+    const amount = moneyValue(totals[0]);
+    return amount === null ? null : amount === 0;
+  }
+  function zeroFreeCheckout(text) {
+    const lines = String(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    if (!/This is free\. Add it to your library to get started\./i.test(lines.join(' '))) return null;
+    // An existing total must be handled by zeroTotal, never bypassed by the free-card layout.
+    if (lines.some(line => /^(?:(?:order|grand)\s+)?(?:total\b|总计|合计|總計)/i.test(line))) return null;
+    const prices = lines.filter(line => /\b(?:USD|EUR|GBP|CNY|HKD|JPY|RMB)\b|US\$|HK\$|CN¥|[$€£¥￥]/i.test(line));
+    if (prices.length !== 1) return null;
+    const amount = moneyValue(prices[0], true);
+    return amount === null ? null : amount === 0;
   }
   function queue(items, keys) {
     const wanted = new Set(keys);
@@ -151,7 +166,7 @@
       item.availability !== 'upcoming' && (!item.start || promotionTime(item.start) <= Date.now()) &&
       (!item.end || Date.parse(item.end) > Date.now()));
   }
-  const api = {parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, zeroTotal, queue};
+  const api = {parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, zeroTotal, zeroFreeCheckout, queue};
   if (typeof module !== 'undefined') module.exports = api;
   root.PocketDomain = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -55,6 +55,15 @@ test('selection skips owned entries and ignores missing/duplicate keys', () => {
   const items = [{key:'a',status:'owned'},{key:'b',status:'unknown'},{key:'c',status:'unowned'}];
   assert.deepEqual(D.queue(items,['a','b','b','unknown']).map(i=>i.key), ['b']);
 });
+test('free checkout requires the exact free-card statement and one explicit currency amount', () => {
+  const text=price=>'Game\n'+price+'\nThis is free. Add it to your library to get started.';
+  assert.equal(D.zeroFreeCheckout(text('HK$0.00')),true);
+  assert.equal(D.zeroFreeCheckout(text('USD 0.00')),true);
+  assert.equal(D.zeroFreeCheckout(text('HK$0.01')),false);
+  for(const price of ['0.00','Free','HK$zero','HK$0.00\nHK$0.00','HK$0.00\nTotal HK$5.00','HK$0.00\nTotal 0evil'])
+    assert.equal(D.zeroFreeCheckout(text(price)),null);
+  assert.equal(D.zeroFreeCheckout('Description says free\nHK$0.00'),null);
+});
 test('Android: announced future offers are visible but expired entries are excluded', () => {
   const purchase = {purchaseType:'Claim',price:{decimalPrice:0},purchaseStateEffectiveDate:'2026-10-17T00:00:00Z'};
   const data = {data:[{type:'freeGame',offers:[{content:{title:'Test Mobile',mapping:{slug:'test-mobile'},purchase:[purchase]}}]}]};
