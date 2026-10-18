@@ -53,4 +53,34 @@ public class OwnershipProofTest {
         assertFalse(MainActivity.claimableNow(new JSONObject().put("status", "owned"), NOW));
         assertTrue(MainActivity.claimableNow(new JSONObject().put("start", NOW - 1000).put("end", "2099-01-01T00:00:00Z"), NOW));
     }
+    @Test public void switchingAccountClearsAllOwnershipEvidenceButRetainsPublicCatalogue() throws Exception {
+        JSONArray items = new JSONArray();
+        for (String category : List.of("pc", "android", "fab")) {
+            items.put(new JSONObject().put("key", category + ":product").put("category", category)
+                    .put("status", "owned").put("checkedAt", NOW).put("cached", true)
+                    .put("statusReason", "Previous account proof").put("cover", "https://cdn1.epicgames.com/cover.jpg")
+                    .put("availability", "upcoming"));
+        }
+        MainActivity.invalidateOwnership(items, "all");
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.getJSONObject(i);
+            assertEquals("unknown", item.getString("status"));
+            assertFalse(item.has("checkedAt"));
+            assertFalse(item.has("cached"));
+            assertFalse(item.has("statusReason"));
+            assertEquals("upcoming", item.getString("availability"));
+            assertEquals("https://cdn1.epicgames.com/cover.jpg", item.getString("cover"));
+            assertTrue(item.has("key"));
+        }
+    }
+    @Test public void ordinaryEpicReauthorizationClearsPcAndAndroidWithoutChangingFabProof() throws Exception {
+        JSONArray items = new JSONArray();
+        for (String category : List.of("pc", "android", "fab"))
+            items.put(new JSONObject().put("category", category).put("status", "owned").put("checkedAt", NOW).put("cached", true));
+        MainActivity.invalidateOwnership(items, "epic");
+        assertEquals("unknown", items.getJSONObject(0).getString("status"));
+        assertEquals("unknown", items.getJSONObject(1).getString("status"));
+        assertEquals("owned", items.getJSONObject(2).getString("status"));
+        assertEquals(NOW, items.getJSONObject(2).getLong("checkedAt"));
+    }
 }

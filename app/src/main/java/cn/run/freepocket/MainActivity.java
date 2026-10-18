@@ -16,6 +16,7 @@ import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
+import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
@@ -74,6 +75,7 @@ public class MainActivity extends Activity {
     private boolean uiReady;
     private boolean started;
     private boolean waitingToVerify;
+    private boolean resettingAccount;
     private int completed;
     private int total;
 
@@ -178,6 +180,10 @@ public class MainActivity extends Activity {
                 if (started) return;
                 started = true;
                 try {
+                    if (getSharedPreferences("catalogue", MODE_PRIVATE).getBoolean("accountResetPending", false)) {
+                        resetAccount(false, "pc");
+                        return;
+                    }
                     tasks.add(task("discover", "pc"));
                     if (epic.connected()) tasks.add(task("syncEpic", "pc"));
                     beginQueue();
@@ -209,6 +215,13 @@ public class MainActivity extends Activity {
         verifyButton = addButton(controls, "核实结果", this::verifyCurrent);
         addButton(controls, "跳过此项", this::skip);
         browser.addView(controls);
+        createStoreView();
+        root.addView(browser, new FrameLayout.LayoutParams(-1, -1));
+        browser.setVisibility(View.GONE);
+        setContentView(root);
+    }
+
+    private void createStoreView() {
         store = new WebView(this);
         configure(store);
         CookieManager.getInstance().setAcceptCookie(true);
@@ -225,7 +238,7 @@ public class MainActivity extends Activity {
                 if (!login || !epic.connected() || (active != null && active.optString("mode").equals("auth"))) return;
                 if ((active != null && active.optString("category").equals("fab")) || "fab".equals(manualCategory)) return;
                 epic.disconnect();
-                try { invalidateCategory("epic"); publish(); }
+                try { invalidateOwnership(items, "epic"); publish(); }
                 catch (JSONException error) { fail("拥有状态无法重置，请重新刷新。"); }
                 if (active != null) fail("Epic 网页登录已过期，请重新连接账号后继续领取。");
             }
@@ -240,9 +253,6 @@ public class MainActivity extends Activity {
                     catch (JSONException error) { fail("商店返回格式无法识别，请重新刷新。"); }
                 });
         browser.addView(store, new LinearLayout.LayoutParams(-1, 0, 1));
-        root.addView(browser, new FrameLayout.LayoutParams(-1, -1));
-        browser.setVisibility(View.GONE);
-        setContentView(root);
     }
 
     private void configure(WebView view) {
@@ -275,7 +285,7 @@ public class MainActivity extends Activity {
     private boolean validCategory(String category) { return Arrays.asList("pc", "android", "fab").contains(category); }
 
     private void handleCommand(JSONObject command) throws JSONException {
-        if (active != null) return;
+        if (active != null || resettingAccount) return;
         String action = command.getString("action");
         if (action.equals("country")) {
             String choice = command.getString("country");
@@ -299,9 +309,13 @@ public class MainActivity extends Activity {
         }
         String category = command.getString("category");
         if (!validCategory(category)) return;
+        if (action.equals("switchAccount") || action.equals("logout")) {
+            resetAccount(action.equals("switchAccount"), category);
+            return;
+        }
         if (action.equals("login")) {
-            if (category.equals("fab")) { fabAccount = new JSONObject(); invalidateCategory("fab"); }
-            else { epic.disconnect(); epicSyncError = ""; invalidateCategory("epic"); }
+            if (category.equals("fab")) { fabAccount = new JSONObject(); invalidateOwnership(items, "fab"); }
+            else { epic.disconnect(); epicSyncError = ""; invalidateOwnership(items, "epic"); }
             tasks.add(task("auth", category));
             tasks.add(task("discover", category));
             tasks.add(task(category.equals("fab") ? "syncFab" : "syncEpic", category));
@@ -721,17 +735,67 @@ public class MainActivity extends Activity {
     private void removeScript() { if (script != null) { script.remove(); script = null; } }
     private void openBrowser(String url) { browser.setVisibility(View.VISIBLE); store.loadUrl(url); }
 
-    private void invalidateCategory(String category) throws JSONException {
+    private void resetAccount(boolean reconnect, String category) throws JSONException {
+        // Epic and Fab share this app's browser cookies. Switching must clear both identities.
+        invalidateOwnership(items, "all");
+        resettingAccount = true;
+        epic.disconnect();
+        fabAccount = new JSONObject();
+        epicSyncError = "";
+        completionNote = "";
+        manualCategory = null;
+        message = "正在退出旧账号并清理登录状态…";
+        cancelReadTimeout();
+        removeScript();
+        tasks.clear();
+        store.stopLoading();
+        browser.removeView(store);
+        store.clearHistory();
+        store.clearCache(true);
+        store.destroy();
+        store = null;
+        browser.setVisibility(View.GONE);
+        WebStorage.getInstance().deleteAllData();
+        // Persist the pending reset so an interrupted cleanup completes before any future login.
+        save();
+        publish();
+        CookieManager cookies = CookieManager.getInstance();
+        cookies.removeAllCookies(removed -> {
+            cookies.flush();
+            if (isDestroyed()) return;
+            createStoreView();
+            resettingAccount = false;
+            message = "已退出 Epic 和 Fab。登录后会重新核实当前账号的拥有状态。";
+            save();
+            publish();
+            if (!reconnect) return;
+            try {
+                tasks.add(task("auth", category));
+                tasks.add(task("discover", category));
+                tasks.add(task(category.equals("fab") ? "syncFab" : "syncEpic", category));
+                beginQueue();
+            } catch (JSONException error) { fail("已退出旧账号，请重新点击连接账号。"); }
+        });
+    }
+
+    static void invalidateOwnership(JSONArray items, String category) throws JSONException {
         for (int i = 0; i < items.length(); i++) {
             JSONObject item = items.getJSONObject(i);
-            boolean matches = category.equals("epic") ? !item.getString("category").equals("fab") : item.getString("category").equals(category);
-            if (matches) { item.put("status", "unknown"); item.remove("checkedAt"); }
+            String itemCategory = item.getString("category");
+            boolean matches = category.equals("all") || category.equals(itemCategory)
+                    || (category.equals("epic") && !itemCategory.equals("fab"));
+            if (!matches) continue;
+            item.put("status", "unknown");
+            item.remove("checkedAt");
+            item.remove("cached");
+            item.remove("statusReason");
         }
     }
 
     private void save() {
         getSharedPreferences("catalogue", MODE_PRIVATE).edit().putInt("schema", 3).putString("items", items.toString())
-                .putString("updated", updated.toString()).putString("country", country).putString("fabAccount", fabAccount.toString()).apply();
+                .putString("updated", updated.toString()).putString("country", country).putString("fabAccount", fabAccount.toString())
+                .putBoolean("accountResetPending", resettingAccount).apply();
     }
 
     private void publish() {
@@ -747,7 +811,7 @@ public class MainActivity extends Activity {
             JSONObject account = new JSONObject().put("connected", epic.connected()).put("displayName", epic.displayName())
                     .put("checkedAt", epic.cachedSnapshot() == null ? 0 : epic.cachedSnapshot().optLong("checkedAt")).put("error", epicSyncError);
             JSONObject state = new JSONObject().put("items", items).put("updated", updated).put("country", country)
-                    .put("message", message).put("busy", active != null).put("fabAccount", fabAccount).put("epicAccount", account);
+                    .put("message", message).put("busy", active != null || resettingAccount).put("fabAccount", fabAccount).put("epicAccount", account);
             catalogue.evaluateJavascript("window.receiveState(" + state + ");", null);
         } catch (JSONException error) { throw new IllegalStateException(error); }
     }

@@ -136,15 +136,15 @@ function render() {
   else $('account').textContent = account.connected ? '账号已连接' : '连接账号';
   $('epic-name').textContent = state.epicAccount?.connected ? state.epicAccount.displayName : '未连接';
   $('fab-name').textContent = state.fabAccount?.connected ? state.fabAccount.displayName : '未连接';
-  $('login-epic').textContent = state.epicAccount?.connected ? '重新连接' : '连接 Epic';
-  $('login-fab').textContent = state.fabAccount?.connected ? '重新连接' : '连接 Fab';
+  $('login-epic').textContent = state.epicAccount?.connected ? '重新授权' : '连接 Epic';
+  $('login-fab').textContent = state.fabAccount?.connected ? '重新授权' : '连接 Fab';
   for (const button of document.querySelectorAll('[data-tab]')) {
     button.setAttribute('aria-selected', String(button.dataset.tab === category));
     button.disabled = state.busy;
     const count = state.items.filter(item => item.category === button.dataset.tab).length;
     $('count-' + button.dataset.tab).textContent = state.updated[button.dataset.tab] ? count : '—';
   }
-  for (const id of ['account', 'refresh', 'sync', 'country', 'login-epic', 'login-fab']) $(id).disabled = state.busy;
+  for (const id of ['account', 'refresh', 'sync', 'country', 'login-epic', 'login-fab', 'switch-account', 'logout']) $(id).disabled = state.busy;
   $('owned-count').textContent = '已拥有 ' + current.filter(item => item.status === 'owned').length + ' 项';
   const shown = $('hide-owned').checked ? active.filter(item => item.status !== 'owned') : active;
   $('items').replaceChildren(...shown.map(renderCard));
@@ -234,5 +234,12 @@ $('sync').onclick = () => command('check', {category});
 $('claim').onclick = () => command('claim', {category, keys: PocketDomain.queue(currentItems(), [...selected]).map(item => item.key)});
 $('login-epic').onclick = () => { closeDetail(); command('login', {category: category === 'android' ? 'android' : 'pc'}); };
 $('login-fab').onclick = () => { closeDetail(); command('login', {category: 'fab'}); };
+function changeAccount(action) {
+  selected.clear();
+  closeDetail();
+  command(action, {category});
+}
+$('switch-account').onclick = () => changeAccount('switchAccount');
+$('logout').onclick = () => changeAccount('logout');
 $('country').onchange = event => { closeDetail(); command('country', {country: event.target.value}); };
 render();
