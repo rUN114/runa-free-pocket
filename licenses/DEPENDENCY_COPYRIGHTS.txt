@@ -1,0 +1,91 @@
+Copyright notices collected from the leading headers of locally resolved dependency source JARs.
+Dependencies are used without source modifications; R8 may remove unused code.
+
+androidx.webkit:webkit:1.12.1
+Copyright (C) 2018 The Android Open Source Project
+Copyright 2018 The Android Open Source Project
+Copyright 2018 The Chromium Authors
+Copyright 2019 The Android Open Source Project
+Copyright 2019 The Chromium Authors
+Copyright 2020 The Android Open Source Project
+Copyright 2020 The Chromium Authors
+Copyright 2022 The Android Open Source Project
+Copyright 2022 The Chromium Authors
+Copyright 2023 The Android Open Source Project
+Copyright 2023 The Chromium Authors
+Copyright 2024 The Chromium Authors
+
+androidx.annotation:annotation:1.8.1
+
+
+androidx.annotation:annotation-jvm:1.8.1
+Copyright (C) 2013 The Android Open Source Project
+Copyright (C) 2014 The Android Open Source Project
+Copyright (C) 2015 The Android Open Source Project
+Copyright (C) 2016 The Android Open Source Project
+Copyright (C) 2017 The Android Open Source Project
+Copyright (C) 2020 The Android Open Source Project
+Copyright (C) 2021 The Android Open Source Project
+Copyright (C) 2022 The Android Open Source Project
+Copyright 2018 The Android Open Source Project
+Copyright 2019 The Android Open Source Project
+Copyright 2021 The Android Open Source Project
+Copyright 2023 The Android Open Source Project
+Copyright 2024 The Android Open Source Project
+
+androidx.annotation:annotation-experimental:1.4.1
+Copyright 2019 The Android Open Source Project
+Copyright 2020 The Android Open Source Project
+
+androidx.core:core:1.1.0
+Copyright (C) 2009 The Android Open Source Project
+Copyright (C) 2011 The Android Open Source Project
+Copyright (C) 2012 The Android Open Source Project
+Copyright (C) 2013 The Android Open Source Project
+Copyright (C) 2014 The Android Open Source Project
+Copyright (C) 2015 The Android Open Source Project
+Copyright (C) 2016 The Android Open Source Project
+Copyright (C) 2017 The Android Open Source Project
+Copyright (C) 2018 The Android Open Source Project
+Copyright 2015 The Android Open Source Project
+Copyright 2017 The Android Open Source Project
+Copyright 2018 The Android Open Source Project
+Copyright 2019 The Android Open Source Project
+
+androidx.lifecycle:lifecycle-runtime:2.0.0
+
+
+androidx.lifecycle:lifecycle-common:2.0.0
+Copyright (C) 2017 The Android Open Source Project
+
+androidx.arch.core:core-common:2.0.0
+Copyright 2018 The Android Open Source Project
+
+androidx.versionedparcelable:versionedparcelable:1.1.0
+
+
+androidx.collection:collection:1.0.0
+Copyright 2018 The Android Open Source Project
+
+org.jetbrains.kotlin:kotlin-stdlib:2.2.10
+Copyright (c) 2007-present, Stephen Colebourne & Michael Nascimento Santos
+Copyright 2007 Google Inc.
+Copyright 2010-2015 JetBrains s.r.o.
+Copyright 2010-2016 JetBrains s.r.o.
+Copyright 2010-2017 JetBrains s.r.o.
+Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+Copyright 2010-2020 JetBrains s.r.o. and Kotlin Programming Language contributors.
+Copyright 2010-2021 JetBrains s.r.o. and Kotlin Programming Language contributors.
+Copyright 2010-2022 JetBrains s.r.o. and Kotlin Programming Language contributors.
+Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
+Copyright 2010-2025 JetBrains s.r.o. and Kotlin Programming Language contributors.
+Copyright 2011 The Guava Authors
+
+org.jetbrains:annotations:13.0
+Copyright 2000-2009 JetBrains s.r.o.
+Copyright 2000-2012 JetBrains s.r.o.
+Copyright 2000-2013 JetBrains s.r.o.
+Copyright 2006 Sascha Weinreuter

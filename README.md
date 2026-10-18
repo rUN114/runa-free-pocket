@@ -2,6 +2,8 @@
 
 Android 上查看并领取 Epic 电脑游戏、安卓游戏和 Fab 限时免费内容的本地工具。
 
+[下载最新版 APK](https://github.com/rUN114/runa-free-pocket/releases/latest) · [版本记录](CHANGELOG.md) · [依赖与素材说明](THIRD_PARTY_NOTICES.md)
+
 原名“周免口袋”。本版补全桌面图标的四个角，使用安卓自适应图标；同时压缩插画、Logo、代码和资源，安装包从 6,990,944 字节降到 **377,717 字节（约 369KiB / 0.36MiB）**，减少约 94.6%。
 
 三类像素插画、官方封面、账号切换与领取功能继续保留。原始设计图放在 `design/brand-source/`，手机只安装处理后的 WebP；资源来源与重生成方式见 [docs/BRANDING.md](docs/BRANDING.md)。
@@ -36,7 +38,7 @@ Android 上查看并领取 Epic 电脑游戏、安卓游戏和 Fab 限时免费�
 | 代码与界面 | 67 项 JavaScript、完整分页、18 项 JUnit，以及四个宽度和短屏的界面检查通过；素材编码工具可重现相同 WebP 字节 |
 | 构建与 Lint | assembleCompact、lintCompact 通过；0 错误、17 警告，没有关闭规则或新增生产依赖 |
 
-本版没有创建新的领取订单，领取、授权与库存的 Java/JavaScript 源码未改；上面的运行检查针对实际经过 R8 处理的 APK。设备仍为模拟器，用户自己的手机和其他桌面遮罩未直接连接验证。GitHub 按用户最新要求继续暂缓上传。
+本版没有创建新的领取订单，领取、授权与库存的 Java/JavaScript 源码未改；上面的运行检查针对实际经过 R8 处理的 APK。设备仍为模拟器，用户自己的手机和其他桌面遮罩未直接连接验证。
 
 ## 0.4.0 的实际验证（2026-10-18）
 
@@ -127,7 +129,9 @@ Android 上查看并领取 Epic 电脑游戏、安卓游戏和 Fab 限时免费�
 
 ## Git 与代码
 
-本目录是源码仓库，主分支 `main`。`v0.1.0`、`v0.2.0`、`v0.3.0` 从原源码包补录；`v0.3.1` 对应图片修复，`v0.3.2` 对应领取修复和真实订单验证，`v0.3.3` 对应账号切换与退出，`v0.4.0` 对应改名和像素视觉更新，`v0.4.1` 对应本次图标补边与安装包瘦身。变化见 [CHANGELOG.md](CHANGELOG.md)，后续修改约定见 [AGENTS.md](AGENTS.md)。尚未配置或推送 GitHub 远程仓库。
+公开源码仓库为 [rUN114/runa-free-pocket](https://github.com/rUN114/runa-free-pocket)，主分支 `main`。`v0.1.0`、`v0.2.0`、`v0.3.0` 从原源码包补录；`v0.3.1` 对应图片修复，`v0.3.2` 对应领取修复和真实订单验证，`v0.3.3` 对应账号切换与退出，`v0.4.0` 对应改名和像素视觉更新，`v0.4.1` 对应本次图标补边与安装包瘦身。变化见 [CHANGELOG.md](CHANGELOG.md)，后续修改约定见 [AGENTS.md](AGENTS.md)。
+
+`v0.4.1` 标签固定在实际 APK 对应源码 `99c6413`；首次公开发布补充的下载入口、依赖声明与许可证放在后续文档提交中，不移动旧标签。发布页同时提供该标签的完整源码 ZIP、依赖声明压缩包和安装包校验值。APK 沿用本机测试签名，其他开发者自行构建时使用自己的签名，不能保证覆盖安装这里的测试包。
 
 ```powershell
 git log --oneline --decorate
@@ -151,4 +155,4 @@ git diff v0.4.0..v0.4.1
 
 真实账号文件、Cookie、会话记录和参考 APK 不在源码或 Git 中。历史实现参考 [free-games-claimer](https://github.com/vogler/free-games-claimer)、[Free-Games-Claimer-Remaster](https://github.com/P-Adamiec/Free-Games-Claimer-Remaster)、[egs-api-rs](https://github.com/AchetaGames/egs-api-rs)，商品权限依据 [Epic 官方说明](https://dev.epicgames.com/docs/web-api-ref/ownership-verification-using-rest?lang=ja)。本工程未复制小黑盒或 C5Game 的品牌、业务脚本、私有后台和账号体系。
 
-本工程采用 GNU AGPL v3，见 LICENSE。官方图片属于相应权利人，通过商城在线加载。本程序与 Epic Games、Fab 无隶属关系；当前安装包使用测试签名。
+本工程代码采用 GNU AGPL v3，见 [LICENSE](LICENSE)。AndroidX、Kotlin、Gradle Wrapper 等依赖保留各自许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [licenses/](licenses/)。官方图片属于相应权利人，通过商城在线加载。本程序与 Epic Games、Fab 无隶属关系；当前安装包使用测试签名。
