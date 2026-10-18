@@ -1,14 +1,14 @@
-# runa周免口袋 0.4.0
+# runa周免口袋 0.4.1
 
 Android 上查看并领取 Epic 电脑游戏、安卓游戏和 Fab 限时免费内容的本地工具。
 
-原名“周免口袋”。本版统一改名为 **runa周免口袋**，以用户提供的白发角色、黑猫和月夜 Logo 为视觉基础，配套生成电脑游戏礼箱、手机游戏礼物、Fab 创作素材台三张像素插画。页面改用深蓝、奶油白与暖金色，切换分类时显示对应插画。
+原名“周免口袋”。本版补全桌面图标的四个角，使用安卓自适应图标；同时压缩插画、Logo、代码和资源，安装包从 6,990,944 字节降到 **377,717 字节（约 369KiB / 0.36MiB）**，减少约 94.6%。
 
-装饰图和 Logo 随 APK 打包，打开页面不需要联网下载它们；游戏和素材的真实封面仍从官方读取。领取、拥有状态核实、账号切换和退出沿用原有实现。品牌资源来源见 [docs/BRANDING.md](docs/BRANDING.md)。
+三类像素插画、官方封面、账号切换与领取功能继续保留。原始设计图放在 `design/brand-source/`，手机只安装处理后的 WebP；资源来源与重生成方式见 [docs/BRANDING.md](docs/BRANDING.md)。
 
 ## 安装与使用
 
-1. 安装 `runa周免口袋-0.4.0-测试版.apk`，可直接覆盖旧版，不需要卸载。包名、签名不变，版本 code 为 7。
+1. 安装 `runa周免口袋-0.4.1-测试版.apk`，可直接覆盖旧版，不需要卸载。包名、签名不变，版本 code 为 8。
 2. 打开后自动读取电脑活动并同步已有 Epic 授权。切换手机游戏或 Fab 分类，可刷新活动、同步库存。
 3. Epic 和 Fab 使用官方网页登录，账号凭据保存在应用私有存储；Epic 会话使用 Android Keystore 加密。本程序不提供代收账号密码的服务器。
 4. 卡片显示图片、名称、活动时间、平台和拥有状态，点击查看详情与预览图。可以隐藏已拥有、全选或选择本期内容。
@@ -18,7 +18,25 @@ Android 上查看并领取 Epic 电脑游戏、安卓游戏和 Fab 限时免费�
 7. 点击右上角账号按钮，在“账号与同步”中选择“切换账号”：同时退出 Epic 和 Fab，并打开当前分类的官方登录页。登录新账号后重新读取库存；需要连接另一平台时，点击对应的“连接 Epic”或“连接 Fab”。
 8. “退出登录”会退出本应用的 Epic 与 Fab，清掉旧账号的拥有状态、同步时间与凭证说明，留在未登录列表。它不影响官方其他应用或其他设备上的登录，也不会删除原账号已经领取的内容。切换时需要重新登录，不保存多个账号密码。
 
+覆盖安装后，如果桌面暂时仍显示旧图标，重新启动桌面或手机以刷新图标缓存。安装包大小与运行后的数据占用不同，官方封面和预览图下载后仍会产生缓存。
+
 最低 Android 8.0，需要支持安全网页消息和页面启动脚本的 Android System WebView。活动和首次图片下载需要联网，程序在前台运行。卸载或清除应用数据会移除本机登录状态。
+
+## 0.4.1 的实际验证（2026-10-18）
+
+实际安装包 SHA-256：`e16637c3abaa792392d2693b7278a78022ef1d48f12ef4d1b6e620c47a22e116`。交付的是开启 R8 及资源压缩的 `compact` 测试构建，沿用旧测试签名，支持覆盖安装。实际安装文件与交付文件哈希相同。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 安装包体积 | 0.4.0 为 6,990,944 字节，0.4.1 为 377,717 字节，减少约 94.6%；不是仅修改文件名或压缩下载外壳 |
+| 桌面图标 | 原来的圆形原图黑角已扩展为完整背景，安卓自适应图标处理系统遮罩；实际 Android 12 / Lawnchair 桌面刷新缓存后无黑角，原黑角位置由 RGB 0,0,0 变为夜空蓝 |
+| 实际小包运行 | 将最终 compact APK 覆盖安装到专用 MuMu，登录授权可正常读取，电脑 2 款、安卓 1 款、Fab 3 项重新核实为已拥有；两项电脑预告仍不可选择 |
+| 图片 | 三张 WebP 插画、页面 Logo、8 张官方封面和 Bad Cheese 的 7 张预览图实际显示正常 |
+| 重新登录 | 在实际压缩包点击切换，旧账号与拥有证据清空；在 Fab 分类重新登录，再连接 Epic，双方身份一致，Epic 库存重新确认。未把原有 Cookie 当作重新登录成功 |
+| 代码与界面 | 67 项 JavaScript、完整分页、18 项 JUnit，以及四个宽度和短屏的界面检查通过；素材编码工具可重现相同 WebP 字节 |
+| 构建与 Lint | assembleCompact、lintCompact 通过；0 错误、17 警告，没有关闭规则或新增生产依赖 |
+
+本版没有创建新的领取订单，领取、授权与库存的 Java/JavaScript 源码未改；上面的运行检查针对实际经过 R8 处理的 APK。设备仍为模拟器，用户自己的手机和其他桌面遮罩未直接连接验证。GitHub 按用户最新要求继续暂缓上传。
 
 ## 0.4.0 的实际验证（2026-10-18）
 
@@ -109,14 +127,14 @@ Android 上查看并领取 Epic 电脑游戏、安卓游戏和 Fab 限时免费�
 
 ## Git 与代码
 
-本目录是源码仓库，主分支 `main`。`v0.1.0`、`v0.2.0`、`v0.3.0` 从原源码包补录；`v0.3.1` 对应图片修复，`v0.3.2` 对应领取修复和真实订单验证，`v0.3.3` 对应账号切换与退出，`v0.4.0` 对应本次改名和像素视觉更新。变化见 [CHANGELOG.md](CHANGELOG.md)，后续修改约定见 [AGENTS.md](AGENTS.md)。尚未配置或推送 GitHub 远程仓库。
+本目录是源码仓库，主分支 `main`。`v0.1.0`、`v0.2.0`、`v0.3.0` 从原源码包补录；`v0.3.1` 对应图片修复，`v0.3.2` 对应领取修复和真实订单验证，`v0.3.3` 对应账号切换与退出，`v0.4.0` 对应改名和像素视觉更新，`v0.4.1` 对应本次图标补边与安装包瘦身。变化见 [CHANGELOG.md](CHANGELOG.md)，后续修改约定见 [AGENTS.md](AGENTS.md)。尚未配置或推送 GitHub 远程仓库。
 
 ```powershell
 git log --oneline --decorate
-git diff v0.3.3..v0.4.0
+git diff v0.4.0..v0.4.1
 ```
 
-交付目录保留 `runa周免口袋-Git历史-0.4.0.bundle`，包含完整提交和标签，可用 `git clone "bundle的完整路径" epic-pocket` 恢复。普通源码 ZIP 不含 Git 历史。
+交付目录保留 `runa周免口袋-Git历史-0.4.1.bundle`，包含完整提交和标签，可用 `git clone "bundle的完整路径" epic-pocket` 恢复。普通源码 ZIP 不含 Git 历史。
 
 主要文件：MainActivity 管理安卓页面与队列；EpicSession、EpicEntitlements 读取授权和库存；OfficialImages 处理图片下载与缓存；assets 中的 domain、automation、ui 分别负责业务规则、官方网页流程和界面。`ImageRedirectTest` 专门回归本次地区跳转问题。
 
@@ -124,9 +142,12 @@ git diff v0.3.3..v0.4.0
 
 ```powershell
 # 工程目录执行；local.properties 配置自己的 SDK，例如 sdk.dir=D\:/Android/sdk
-./gradlew.bat assembleDebug lintDebug testDebugUnitTest
+# 开发时可用 assembleDebug；交付的小包使用 compact。
+./gradlew.bat assembleCompact lintCompact testDebugUnitTest
 ./tests/run-tests.ps1
 ```
+
+`debug` 方便日常断点调试；`compact` 继承开启压缩的 release 配置，同时使用开发签名和调试能力，便于实际验证及覆盖旧测试包。正式 `release` 默认压缩，但应由发布者配置自己的签名。默认规则及 WebKit 自带的 Chromium 边界接口规则保留必要运行接口，没有全库保留规则。
 
 真实账号文件、Cookie、会话记录和参考 APK 不在源码或 Git 中。历史实现参考 [free-games-claimer](https://github.com/vogler/free-games-claimer)、[Free-Games-Claimer-Remaster](https://github.com/P-Adamiec/Free-Games-Claimer-Remaster)、[egs-api-rs](https://github.com/AchetaGames/egs-api-rs)，商品权限依据 [Epic 官方说明](https://dev.epicgames.com/docs/web-api-ref/ownership-verification-using-rest?lang=ja)。本工程未复制小黑盒或 C5Game 的品牌、业务脚本、私有后台和账号体系。
 

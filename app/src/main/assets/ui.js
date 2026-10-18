@@ -7,9 +7,9 @@ const platforms = {pc: '电脑游戏', android: 'Android 手机游戏', fab: 'Fa
 const statuses = {unknown: '未能确认', owned: '已拥有', unowned: '未拥有', partial: '部分已拥有', expired: '活动已结束', error: '同步失败'};
 
 const categoryScenes = {
-  pc: {title: '免费好游戏\n收进口袋', caption: '本期免费游戏，领取后入库', art: 'game-night.png'},
-  android: {title: '手机好游戏\n收进口袋', caption: '本期 Android 免费游戏', art: 'mobile-gift.png'},
-  fab: {title: '创作新素材\n收进口袋', caption: '本期 Fab 限免素材', art: 'fab-workshop.png'}
+  pc: {title: '免费好游戏\n收进口袋', caption: '本期免费游戏，领取后入库', art: 'game-night.webp'},
+  android: {title: '手机好游戏\n收进口袋', caption: '本期 Android 免费游戏', art: 'mobile-gift.webp'},
+  fab: {title: '创作新素材\n收进口袋', caption: '本期 Fab 限免素材', art: 'fab-workshop.webp'}
 };
 
 function element(tag, className, text) {
