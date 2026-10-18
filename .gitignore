@@ -18,3 +18,7 @@ storage-state*.json
 *.apk
 *.aab
 *.bundle
+
+# Android Studio 本机项目设置。
+.idea/
+*.iml

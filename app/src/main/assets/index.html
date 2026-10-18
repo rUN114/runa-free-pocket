@@ -4,14 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://*.epicgames.com https://*.unrealengine.com https://*.fab.com https://*.sketchfab.com https://cdn1-epicgames-1251447533.file.myqcloud.com; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
-  <meta name="theme-color" content="#0d0f13">
-  <title>周免口袋</title><link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#071329">
+  <title>runa周免口袋</title><link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="app">
   <header class="hero">
-    <div class="top-line"><span class="wordmark">周免口袋</span><button id="account" class="account-button">连接账号</button></div>
-    <div class="hero-copy"><div><h1>本期免费<br>一眼看清，一起领取</h1><p>电脑游戏 · 手机游戏 · Fab 素材</p></div><div class="pocket-art" aria-hidden="true"><span>FREE</span><i></i></div></div>
+    <div class="top-line">
+      <div class="brand-lockup"><img class="brand-logo" src="brand/logo.jpg" width="44" height="44" alt=""><div><span class="wordmark">runa周免口袋</span><span class="brand-caption">Epic 与 Fab 限免助手</span></div></div>
+      <button id="account" class="account-button">连接账号</button>
+    </div>
+    <div class="hero-copy">
+      <div class="hero-text"><span class="season-label">本期限免</span><h1 id="hero-title">免费好游戏<br>收进口袋</h1><p id="hero-caption">本期免费游戏，领取后入库</p></div>
+      <img id="hero-art" class="hero-art" src="brand/game-night.png" width="600" height="400" alt="" aria-hidden="true">
+    </div>
   </header>
   <main>
     <nav class="tabs" aria-label="内容分类">
@@ -36,7 +42,7 @@
 </div>
 <dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title"><div class="dialog-head"><span>内容详情</span><button id="close-detail" class="close-button" aria-label="关闭详情">✕</button></div><div id="detail-content"></div></dialog>
 <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title">
-  <div class="dialog-head"><h2 id="account-title">账号与同步</h2><button id="close-account" class="close-button" aria-label="关闭账号设置">✕</button></div>
+  <div class="dialog-head"><div class="account-heading"><img src="brand/logo.jpg" width="32" height="32" alt=""><h2 id="account-title">账号与同步</h2></div><button id="close-account" class="close-button" aria-label="关闭账号设置">✕</button></div>
   <p class="dialog-note">在官方页面登录。完成连接后，程序自动读取当前账号的拥有状态。</p>
   <section class="account-row"><div><strong>Epic Games</strong><p id="epic-name">未连接</p></div><button id="login-epic" class="secondary">连接 Epic</button></section>
   <section class="account-row"><div><strong>Fab 素材库</strong><p id="fab-name">未连接</p></div><button id="login-fab" class="secondary">连接 Fab</button></section>
@@ -44,7 +50,7 @@
   <p class="dialog-note">切换或退出会同时清除本应用的 Epic、Fab 登录状态和旧库存标记。切换后重新登录另一个账号；已领取的内容仍保留在原账号中。</p>
   <label class="country-row">Epic 账号地区<select id="country"><option value="CN">中国大陆</option><option value="HK">中国香港</option><option value="TW">中国台湾</option><option value="US">美国</option><option value="JP">日本</option><option value="GB">英国</option><option value="DE">德国</option></select></label>
   <p class="dialog-note">请选择账号的真实地区。授权凭据保存在本机加密存储中；程序不要求输入账号密码。</p>
-  <p class="build-version">周免口袋 0.3.3 · 测试版</p>
+  <p class="build-version">runa周免口袋 0.4.0 · 测试版</p>
 </dialog>
 <script src="domain.js"></script><script src="ui.js"></script>
 </body></html>

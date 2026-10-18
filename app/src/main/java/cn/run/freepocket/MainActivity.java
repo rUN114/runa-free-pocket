@@ -142,7 +142,7 @@ public class MainActivity extends Activity {
             WebView.setWebContentsDebuggingEnabled(true);
         }
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.rgb(13, 15, 19));
+        root.setBackgroundColor(Color.rgb(7, 19, 41));
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
                 var system = insets.getInsets(WindowInsets.Type.systemBars());
@@ -153,7 +153,7 @@ public class MainActivity extends Activity {
         });
         catalogue = new WebView(this);
         configure(catalogue);
-        catalogue.setBackgroundColor(Color.rgb(13, 15, 19));
+        catalogue.setBackgroundColor(Color.rgb(7, 19, 41));
         var assets = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this)).build();
         catalogue.setWebViewClient(new WebViewClient() {
