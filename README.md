@@ -90,7 +90,7 @@ Android 上查看并领取 Epic 电脑游戏、安卓游戏和 Fab 限时免费�
 - Epic 新收据显示“It's all yours / Thanks for your order / Continue Browsing”。现在将其作为重新核实库存的触发条件。
 - Fab 使用自己的 `/payment/web/purchase` 地址，并在成功后关闭结算窗，商品页显示“View in My Library”。现在能接着核实当前素材库，再处理队列下一项。页面文案和按钮点击均不直接当作已拥有。
 
-此次重新对照了先前反编译的小黑盒订单调用链与开源实现，并以实际官方页面和网络行为修正代码。旧 APK 使用的订单地址与当前实际请求存在版本差异，不能直接照搬。本程序通过官方页面的结算流程提交订单，不依赖小黑盒后台。
+本程序通过官方页面的结算流程提交订单，并以官方库存核实领取结果。
 
 ## 0.3.2 的领取验证（2026-10-18）
 
@@ -131,7 +131,7 @@ Android 上查看并领取 Epic 电脑游戏、安卓游戏和 Fab 限时免费�
 
 公开源码仓库为 [rUN114/runa-free-pocket](https://github.com/rUN114/runa-free-pocket)，主分支 `main`。`v0.1.0`、`v0.2.0`、`v0.3.0` 从原源码包补录；`v0.3.1` 对应图片修复，`v0.3.2` 对应领取修复和真实订单验证，`v0.3.3` 对应账号切换与退出，`v0.4.0` 对应改名和像素视觉更新，`v0.4.1` 对应本次图标补边与安装包瘦身。变化见 [CHANGELOG.md](CHANGELOG.md)，后续修改约定见 [AGENTS.md](AGENTS.md)。
 
-`v0.4.1` 标签固定在实际 APK 对应源码 `99c6413`；首次公开发布补充的下载入口、依赖声明与许可证放在后续文档提交中，不移动旧标签。发布页同时提供该标签的完整源码 ZIP、依赖声明压缩包和安装包校验值。APK 沿用本机测试签名，其他开发者自行构建时使用自己的签名，不能保证覆盖安装这里的测试包。
+`v0.4.1` 标签固定在实际 APK 对应源码 `99c6413`；首次公开发布补充的下载入口、依赖声明与许可证放在后续文档提交中，不移动旧标签。发布页同时提供完整源码 ZIP、依赖声明压缩包和安装包校验值；源码 ZIP 的应用代码与标签一致，附带文档随主分支修订。APK 沿用本机测试签名，其他开发者自行构建时使用自己的签名，不能保证覆盖安装这里的测试包。
 
 ```powershell
 git log --oneline --decorate
@@ -153,6 +153,6 @@ git diff v0.4.0..v0.4.1
 
 `debug` 方便日常断点调试；`compact` 继承开启压缩的 release 配置，同时使用开发签名和调试能力，便于实际验证及覆盖旧测试包。正式 `release` 默认压缩，但应由发布者配置自己的签名。默认规则及 WebKit 自带的 Chromium 边界接口规则保留必要运行接口，没有全库保留规则。
 
-真实账号文件、Cookie、会话记录和参考 APK 不在源码或 Git 中。历史实现参考 [free-games-claimer](https://github.com/vogler/free-games-claimer)、[Free-Games-Claimer-Remaster](https://github.com/P-Adamiec/Free-Games-Claimer-Remaster)、[egs-api-rs](https://github.com/AchetaGames/egs-api-rs)，商品权限依据 [Epic 官方说明](https://dev.epicgames.com/docs/web-api-ref/ownership-verification-using-rest?lang=ja)。本工程未复制小黑盒或 C5Game 的品牌、业务脚本、私有后台和账号体系。
+实现参考 [free-games-claimer](https://github.com/vogler/free-games-claimer)、[Free-Games-Claimer-Remaster](https://github.com/P-Adamiec/Free-Games-Claimer-Remaster)、[egs-api-rs](https://github.com/AchetaGames/egs-api-rs)，商品权限依据 [Epic 官方说明](https://dev.epicgames.com/docs/web-api-ref/ownership-verification-using-rest?lang=ja)。
 
 本工程代码采用 GNU AGPL v3，见 [LICENSE](LICENSE)。AndroidX、Kotlin、Gradle Wrapper 等依赖保留各自许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [licenses/](licenses/)。官方图片属于相应权利人，通过商城在线加载。本程序与 Epic Games、Fab 无隶属关系；当前安装包使用测试签名。

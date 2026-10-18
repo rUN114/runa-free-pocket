@@ -34,8 +34,6 @@ Apache 2.0 全文保留在 [WebKit 随包许可证](licenses/webkit-1.12.1-META-
 
 实现过程中参考了 [free-games-claimer](https://github.com/vogler/free-games-claimer)、[Free-Games-Claimer-Remaster](https://github.com/P-Adamiec/Free-Games-Claimer-Remaster)、[egs-api-rs](https://github.com/AchetaGames/egs-api-rs) 的公开流程和 Epic 官方文档。这些参考项目保持各自许可证，本仓库未捆绑其源码。
 
-小黑盒和 C5Game 安装包仅用于本机研究界面与行为，不随本仓库或发布附件分发；未复制其品牌、业务脚本、私有后台或账号体系。
-
 Logo 由项目拥有者提供，插画及图标补边使用 imagegen 根据该 Logo 制作，来源及处理过程见 [docs/BRANDING.md](docs/BRANDING.md)。原图在 `design/brand-source/`。代码开源不表示转让 runa 名称、Logo 或授予第三方商标权。
 
 Epic、Fab 以及游戏和素材封面的权利属于对应权利人。商品封面与预览图运行时从官方服务读取，不作为仓库素材分发。本项目与 Epic Games、Fab 无隶属关系。
