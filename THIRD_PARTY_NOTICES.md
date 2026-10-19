@@ -4,7 +4,7 @@ runa周免口袋的工程代码采用 GNU AGPL v3，全文见 [LICENSE](LICENSE)
 
 ## Android 运行依赖
 
-以下为 0.4.1 构建解析得到的直接及传递依赖；R8 会移除实际未使用的代码。这些依赖未修改源代码，其 Maven POM 均声明 Apache License 2.0。
+以下为 1.0.0 构建解析得到的直接及传递依赖；R8 会移除实际未使用的代码。这些依赖未修改源代码，其 Maven POM 均声明 Apache License 2.0。
 
 | 组件 | 版本 | 上游 |
 | --- | --- | --- |
@@ -28,6 +28,7 @@ Apache 2.0 全文保留在 [WebKit 随包许可证](licenses/webkit-1.12.1-META-
 - 仓库附带 Gradle 9.3.0 Wrapper，Apache 2.0；原随包许可证见 [Gradle-Wrapper-LICENSE.txt](licenses/Gradle-Wrapper-LICENSE.txt)。Android Gradle Plugin 9.0.0 通过构建系统下载，不打入 APK。
 - JUnit 4.13.2 和 org.json:json:20240303 只用于本地测试，不打入 APK；分别见 [JUnit 许可证](https://github.com/junit-team/junit4/blob/r4.13.2/LICENSE-junit.txt) 和 [JSON-java 许可证](https://github.com/stleary/JSON-java/blob/20240303/LICENSE)。
 - 可选设计工具 Sharp 0.35.5 使用 Apache 2.0，具体工具及传递依赖见 [Sharp](https://github.com/lovell/sharp)。仓库不附带其安装文件，APK 不包含 Sharp；已提交转换后的 WebP，普通构建无需运行设计工具。
+- 可选浏览器测试使用 Playwright 1.62.1，Apache 2.0，见 [Playwright 许可证](https://github.com/microsoft/playwright/blob/v1.62.1/LICENSE)。仓库不捆绑其运行时，APK 不包含 Playwright。原生测试只使用平台 API 和已有 AndroidX WebKit，不新增生产依赖。
 - Android 系统提供 WebView；本工程没有内嵌 Chromium 浏览器或 Android 系统镜像。
 
 ## 实现参考与品牌素材
@@ -40,4 +41,4 @@ Epic、Fab 以及游戏和素材封面的权利属于对应权利人。商品封
 
 ## 发布附件
 
-0.4.1 的 APK 对应固定标签 `v0.4.1`，SHA-256 为 `e16637c3abaa792392d2693b7278a78022ef1d48f12ef4d1b6e620c47a22e116`。首次公开发布的声明与许可证是后续文档补充，发布页附有单独的 notices ZIP；APK 字节与已测试交付包相同。
+1.0.0 的 APK 对应标签 `v1.0.0`，SHA-256 为 `1244ab763661d60ad7d3ddd4872b77f061f46c540d1c1a8b49a69565ad05d4b9`。发布页附完整源码、声明与许可证 ZIP、验证范围和校验值；APK 与实际安装验收的文件相同。签名私钥不随源码分发。

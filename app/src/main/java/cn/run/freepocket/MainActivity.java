@@ -24,6 +24,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.webkit.ScriptHandler;
+import androidx.webkit.JavaScriptReplyProxy;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
@@ -40,6 +41,7 @@ import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -56,6 +58,8 @@ public class MainActivity extends Activity {
     private JSONObject updated = new JSONObject();
     private JSONObject fabAccount = new JSONObject();
     private EpicSession epic;
+    private ClaimJournal journal;
+    private String journalError = "";
     private OfficialImages images;
     private String country = "CN";
     private String message = "正在读取本期免费内容…";
@@ -93,6 +97,8 @@ public class MainActivity extends Activity {
             loadCache();
         } catch (IOException error) { throw new IllegalStateException("应用脚本资源缺失", error); }
         initializeSession();
+        try { journal = new ClaimJournal(getSharedPreferences("claim-journal", MODE_PRIVATE).getString("data", "{}")); }
+        catch (JSONException error) { journalError = "领取记录无法读取，为防止重复订单已停用自动领取，请保留应用数据并检查记录。"; }
         images = new OfficialImages(new java.io.File(getCacheDir(), "official-images"));
         buildViews();
         catalogue.loadUrl(APP_ORIGIN + "/assets/index.html");
@@ -249,7 +255,7 @@ public class MainActivity extends Activity {
         WebViewCompat.addWebMessageListener(store, "PocketStore", STORE_ORIGINS,
                 (view, data, origin, main, reply) -> {
                     if (active == null || !STORE_ORIGINS.contains(origin.toString())) return;
-                    try { handleStoreMessage(new JSONObject(data.getData()), origin.toString(), main); }
+                    try { handleStoreMessage(new JSONObject(data.getData()), origin.toString(), main, reply); }
                     catch (JSONException error) { fail("商店返回格式无法识别，请重新刷新。"); }
                 });
         browser.addView(store, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -287,6 +293,14 @@ public class MainActivity extends Activity {
     private void handleCommand(JSONObject command) throws JSONException {
         if (active != null || resettingAccount) return;
         String action = command.getString("action");
+        if (action.equals("claimAll") || action.equals("resumeBatch")) {
+            if (journal == null || !journalError.isEmpty()) { message = journalError; publish(); return; }
+            if (action.equals("claimAll")) journal.start(country, Arrays.asList("pc", "android", "fab"), null);
+            else journal.resume(country);
+            if (!saveJournal()) return;
+            queueBatch();
+            return;
+        }
         if (action.equals("country")) {
             String choice = command.getString("country");
             if (!Arrays.asList("CN", "HK", "TW", "US", "JP", "GB", "DE").contains(choice)) return;
@@ -329,21 +343,60 @@ public class MainActivity extends Activity {
             if (!category.equals("fab") && !epic.connected()) tasks.add(task("auth", category));
             tasks.add(task(category.equals("fab") ? "syncFab" : "syncEpic", category));
         } else if (action.equals("claim")) {
+            if (journal == null || !journalError.isEmpty()) { message = journalError; publish(); return; }
             JSONArray keys = command.getJSONArray("keys");
-            ArrayDeque<JSONObject> selected = new ArrayDeque<>();
+            JSONArray selected = new JSONArray();
             Set<String> seen = new HashSet<>();
             for (int i = 0; i < keys.length(); i++) {
                 JSONObject item = find(keys.getString(i));
                 if (item == null || !category.equals(item.getString("category")) || !seen.add(item.getString("key"))) continue;
-                selected.add(task("claim", category).put("item", item));
+                selected.put(new JSONObject().put("key", item.getString("key")).put("title", item.getString("title")).put("category", category));
             }
-            if (selected.isEmpty()) return;
-            if (category.equals("fab") && !fabAccount.optBoolean("connected")) tasks.add(task("auth", category));
-            if (!category.equals("fab") && !epic.connected()) tasks.add(task("auth", category));
-            tasks.add(task(category.equals("fab") ? "syncFab" : "syncEpic", category).put("forClaim", true));
-            tasks.addAll(selected);
+            if (selected.length() == 0) return;
+            journal.start(country, Arrays.asList(category), selected);
+            if (!saveJournal()) return;
+            queueBatch();
+            return;
         }
         beginQueue();
+    }
+
+    private void queueBatch() throws JSONException {
+        for (String category : journal.categories()) {
+            tasks.add(task("discover", category));
+            tasks.add(task("ensureAuth", category));
+            tasks.add(task(category.equals("fab") ? "syncFab" : "syncEpic", category).put("forClaim", true));
+            tasks.add(task("planBatch", category));
+        }
+        beginQueue();
+    }
+
+    private boolean saveJournal() {
+        // Do not acknowledge a page action until its recovery checkpoint is on disk.
+        if (getSharedPreferences("claim-journal", MODE_PRIVATE).edit().putString("data", journal.serialize()).commit()) return true;
+        cancelReadTimeout();
+        removeScript();
+        tasks.clear();
+        active = null;
+        store.stopLoading();
+        store.loadUrl("about:blank");
+        browser.setVisibility(View.GONE);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        message = "无法保存领取进度，已停止自动操作。请检查手机存储空间后重试。";
+        publish();
+        return false;
+    }
+
+    private boolean bindBatchAccount(String category) {
+        if (journal == null || !journal.running()) return true;
+        try {
+            journal.bind(category, category.equals("fab") ? fabAccount.getString("accountId") : epic.accountId(),
+                    category.equals("fab") ? fabAccount.getString("displayName") : epic.displayName());
+            return true;
+        } catch (JSONException error) {
+            fail("当前账号未连接或与原领取记录不一致，请重新连接原账号，或开始新任务。");
+            return false;
+        }
     }
 
     private void beginQueue() {
@@ -367,11 +420,60 @@ public class MainActivity extends Activity {
         store.stopLoading();
         active = tasks.poll();
         try {
-            while (active != null && active.optString("mode").equals("claim")) {
-                JSONObject current = find(active.getJSONObject("item").getString("key"));
-                if (current != null && claimableNow(current, System.currentTimeMillis())) {
-                    active.put("item", current);
+            while (active != null) {
+                String mode = active.getString("mode");
+                String category = active.getString("category");
+                if (mode.equals("ensureAuth")) {
+                    if (category.equals("fab") ? fabAccount.optBoolean("connected") : epic.connected()) {
+                        completed++; active = tasks.poll(); continue;
+                    }
+                    active.put("mode", "auth");
                     break;
+                }
+                if (mode.equals("planBatch")) {
+                    if (!bindBatchAccount(category)) return;
+                    journal.plan(category, items, System.currentTimeMillis());
+                    List<JSONObject> work = journal.work(category);
+                    for (int i = work.size() - 1; i >= 0; i--) {
+                        JSONObject entry = work.get(i);
+                        JSONObject item = find(entry.getString("key"));
+                        if (item != null) {
+                            String entryMode = "claim";
+                            if (entry.getString("status").equals("uncertain")) entryMode = category.equals("fab") ? "check" : "verifyEpic";
+                            else if (entry.optBoolean("pageCheck")) entryMode = "check";
+                            tasks.addFirst(task(entryMode, category).put("item", item)
+                                    .put("precheck", entry.getString("status").equals("pending") && entry.optBoolean("pageCheck")));
+                        }
+                    }
+                    total += work.size();
+                    if (!saveJournal()) return;
+                    completed++; active = tasks.poll(); continue;
+                }
+                if (!mode.equals("claim") && !mode.equals("check") && !mode.equals("verifyEpic")) break;
+                if (!active.has("item")) break;
+                JSONObject current = find(active.getJSONObject("item").getString("key"));
+                // Login expiry can invalidate an item after the batch was planned.
+                if (mode.equals("claim") && current != null &&
+                        (!Arrays.asList("unowned", "partial").contains(current.optString("status")) || current.optBoolean("cached"))) {
+                    if (journal != null && journal.running()) {
+                        String resultStatus = current.optString("status");
+                        if (current.optBoolean("cached")) resultStatus = "error";
+                        journal.result(current.getString("key"), resultStatus, "拥有状态已变化，请先同步库存再重试");
+                        if (!saveJournal()) return;
+                    }
+                    completed++; active = tasks.poll(); continue;
+                }
+                if (current != null && (!mode.equals("claim") || claimableNow(current, System.currentTimeMillis()))) {
+                    active.put("item", current);
+                    if (journal != null && journal.running()) {
+                        journal.working(current.getString("key"));
+                        if (!saveJournal()) return;
+                    }
+                    break;
+                }
+                if (journal != null && journal.running()) {
+                    journal.result(active.getJSONObject("item").getString("key"), current == null ? "expired" : current.optString("status"), "当前活动或拥有状态已变化");
+                    if (!saveJournal()) return;
                 }
                 completed++;
                 active = tasks.poll();
@@ -379,6 +481,13 @@ public class MainActivity extends Activity {
         } catch (JSONException error) { fail("领取队列无法读取，请重新选择。"); return; }
         waitingToVerify = false;
         if (active == null) {
+            try {
+                if (journal != null && journal.running()) {
+                    journal.finish();
+                    if (!saveJournal()) return;
+                    completionNote = "本次领取处理已结束，请查看领取记录；待核实项目不会重复自动下单。";
+                }
+            } catch (JSONException error) { message = "领取结果记录异常，请同步库存核实。"; publish(); return; }
             message = completionNote.isEmpty() ? "活动已更新。连接账号后，拥有状态会自动同步。" : completionNote;
             browser.setVisibility(View.GONE);
             store.loadUrl("about:blank");
@@ -395,6 +504,10 @@ public class MainActivity extends Activity {
             String nonce = active.getString("nonce");
             String category = active.getString("category");
             String mode = active.getString("mode");
+            if (active.has("item") && journal != null && journal.running()) {
+                if (!bindBatchAccount(category)) return;
+                if (category.equals("fab")) active.put("accountId", fabAccount.getString("accountId"));
+            }
             verifyButton.setEnabled(true);
             verifyButton.setText(mode.equals("auth") ? "重试连接" : "重试读取");
             if (mode.equals("syncEpic") || mode.equals("verifyEpic")) {
@@ -450,7 +563,9 @@ public class MainActivity extends Activity {
     private boolean current(String nonce) { return active != null && nonce.equals(active.optString("nonce")); }
 
     static boolean claimableNow(JSONObject item, long now) {
-        if (Arrays.asList("owned", "expired").contains(item.optString("status")) || item.optString("availability").equals("upcoming")) return false;
+        if (Arrays.asList("owned", "expired").contains(item.optString("status"))) return false;
+        if (item.optString("availability").equals("expired")) return false;
+        if (item.optString("availability").equals("upcoming") && item.optString("start").isEmpty()) return false;
         try {
             Object start = item.opt("start");
             if (start != null && start != JSONObject.NULL && !start.toString().isEmpty()) {
@@ -526,10 +641,11 @@ public class MainActivity extends Activity {
                         epicSyncError = "";
                         evaluateItems("PocketDomain.applyOwnership(" + items + "," + result.snapshot + ",true," + JSONObject.quote(category) + ")", nonce, value -> {
                             items = value;
+                            if (active.optBoolean("forClaim") && !bindBatchAccount(category)) return;
                             completionNote = "拥有状态已同步：" + epic.displayName() + "。已拥有的项目会跳过。";
                             if (active.has("item")) {
                                 JSONObject checked = find(active.getJSONObject("item").getString("key"));
-                                if (checked != null && !checked.optString("status").equals("owned")) {
+                                if (!active.optBoolean("precheck") && checked != null && !checked.optString("status").equals("owned")) {
                                     if (active.optInt("verifyAttempt", 0) == 0) {
                                         active.put("verifyAttempt", 1);
                                         message = "订单已提交，等待拥有凭证更新…";
@@ -541,6 +657,10 @@ public class MainActivity extends Activity {
                                     completionNote = "有订单尚未确认，请查看卡片状态后重试同步。";
                                 }
                             }
+                            if (active.has("item")) {
+                                JSONObject checked = find(active.getJSONObject("item").getString("key"));
+                                if (!recordBatchItem(checked, checked.optString("status"), checked.optString("statusReason"))) return;
+                            }
                             completed++; next();
                         });
                     } catch (GeneralSecurityException | IOException error) { fail("无法安全保存账号会话，请重新连接 Epic。"); }
@@ -551,12 +671,23 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void handleStoreMessage(JSONObject data, String origin, boolean main) throws JSONException {
+    private void handleStoreMessage(JSONObject data, String origin, boolean main, JavaScriptReplyProxy reply) throws JSONException {
         if (!current(data.optString("nonce"))) return;
         String type = data.getString("type");
         String category = active.getString("category");
         String mode = active.getString("mode");
         String productOrigin = category.equals("fab") ? "https://www.fab.com" : "https://store.epicgames.com";
+        if (type.equals("actionReady")) {
+            if (!mode.equals("claim") || !active.has("item") || journal == null || !journal.running()) return;
+            String stage = data.getString("stage");
+            if (stage.equals("product") && (!main || !origin.equals(productOrigin))) return;
+            if (!bindBatchAccount(category)) return;
+            try { journal.reserve(active.getJSONObject("item").getString("key"), stage); }
+            catch (JSONException error) { fail("此项目存在待核实操作或重复请求，请先在领取记录中核实。"); return; }
+            if (!saveJournal()) return;
+            reply.postMessage(new JSONObject().put("type", "actionPermit").put("nonce", active.getString("nonce")).put("stage", stage).toString());
+            return;
+        }
         if (Arrays.asList("catalogue", "result", "error", "ownership").contains(type)
                 && (!main || !origin.equals(productOrigin))) return;
         if (type.equals("authorized")) {
@@ -574,6 +705,7 @@ public class MainActivity extends Activity {
         } else if (type.equals("ownership")) {
             if (!category.equals("fab") || !mode.equals("syncFab")) return;
             acceptFabOwnership(data);
+            if (active.optBoolean("forClaim") && !bindBatchAccount(category)) return;
             completed++; next();
         } else if (type.equals("catalogue")) {
             if (!mode.equals("discover")) return;
@@ -587,6 +719,7 @@ public class MainActivity extends Activity {
             JSONObject item = find(active.getJSONObject("item").getString("key"));
             if (item != null) item.put("status", status).put("checkedAt", System.currentTimeMillis()).put("cached", false)
                     .put("statusReason", category.equals("fab") ? "Fab 素材库已核实" : "官方商品页面已核实");
+            if (!recordBatchItem(item, status, data.optString("message", "官方页面及库存已核实"))) return;
             completed++; next();
         } else if (type.equals("checkoutComplete")) {
             if (mode.equals("claim")) verifyCurrent();
@@ -613,6 +746,17 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean recordBatchItem(JSONObject item, String status, String reason) throws JSONException {
+        if (journal == null || !journal.running()) return true;
+        String key = active.getJSONObject("item").getString("key");
+        if (active.optBoolean("precheck") && status.equals("unowned") && item != null && claimableNow(item, System.currentTimeMillis())) {
+            journal.prechecked(key);
+            tasks.addFirst(task("claim", active.getString("category")).put("item", item));
+            total++;
+        } else journal.result(key, status, reason);
+        return saveJournal();
+    }
+
     private void acceptFabOwnership(JSONObject data) throws JSONException {
         JSONArray acquired = data.getJSONArray("owned");
         Set<String> uids = new HashSet<>();
@@ -623,7 +767,8 @@ public class MainActivity extends Activity {
             if (item.getString("category").equals("fab")) item.put("status", uids.contains(item.getString("id")) ? "owned" : "unowned")
                     .put("checkedAt", time).put("cached", false).put("statusReason", "Fab 已获取素材库核实");
         }
-        fabAccount = new JSONObject().put("connected", true).put("displayName", data.getString("displayName")).put("checkedAt", time);
+        fabAccount = new JSONObject().put("connected", true).put("displayName", data.getString("displayName"))
+                .put("accountId", data.getString("accountId")).put("checkedAt", time);
         completionNote = "Fab 拥有状态已同步，已拥有的素材会跳过。";
     }
 
@@ -687,7 +832,9 @@ public class MainActivity extends Activity {
         }
         try {
             removeScript();
-            active.put("mode", active.getString("category").equals("fab") ? "check" : "verifyEpic");
+            JSONArray catalogItems = active.getJSONObject("item").optJSONArray("catalogItems");
+            boolean pageOnly = active.getString("category").equals("fab") || catalogItems == null || catalogItems.length() == 0;
+            active.put("mode", pageOnly ? "check" : "verifyEpic");
             waitingToVerify = false;
             startActive();
         } catch (JSONException error) { fail("无法核实当前商品，请重新同步。"); }
@@ -696,12 +843,31 @@ public class MainActivity extends Activity {
     private void skip() {
         if (active == null) { stop(); return; }
         if (!active.optString("mode").equals("claim") && !active.optString("mode").equals("check")) { stop(); return; }
+        try {
+            if (journal != null && journal.running() && active.has("item")) {
+                journal.result(active.getJSONObject("item").getString("key"), "error", "用户跳过，可在记录中重试未提交项目");
+                if (!saveJournal()) return;
+            }
+        } catch (JSONException error) { fail("无法记录跳过结果，请同步库存。"); return; }
         completed++;
         next();
     }
 
     private void fail(String reason) {
         manualCategory = null;
+        if (journal != null && journal.running() && active != null) {
+            try {
+                if (active.has("item")) journal.result(active.getJSONObject("item").getString("key"), "error", reason);
+                else {
+                    String category = active.getString("category");
+                    journal.categoryFailed(category, reason);
+                    tasks.removeIf(task -> category.equals(task.optString("category")));
+                }
+                if (!saveJournal()) return;
+                completionNote = reason;
+                completed++; next(); return;
+            } catch (JSONException error) { message = "领取记录无法更新，已停止。请同步库存核实结果。"; }
+        }
         stop();
         message = reason;
         publish();
@@ -710,6 +876,11 @@ public class MainActivity extends Activity {
     private void stop() {
         String returnCategory = active == null ? manualCategory : null;
         manualCategory = null;
+        if (journal != null && journal.running()) {
+            try { journal.pause("已暂停；继续前会重新查库，待核实订单不会自动重下单"); }
+            catch (JSONException error) { journalError = "领取记录无法暂停，请同步库存核实。"; }
+            if (!saveJournal()) return;
+        }
         if (active != null) message = completionNote.isEmpty() ? "本次处理已停止。未确认的订单可点击同步重新核实。" : completionNote;
         cancelReadTimeout();
         removeScript();
@@ -738,6 +909,11 @@ public class MainActivity extends Activity {
     private void resetAccount(boolean reconnect, String category) throws JSONException {
         // Epic and Fab share this app's browser cookies. Switching must clear both identities.
         invalidateOwnership(items, "all");
+        if (journal != null) {
+            if (journal.running()) journal.pause("账号已退出，继续任务前必须登录原账号");
+            if (!getSharedPreferences("claim-journal", MODE_PRIVATE).edit().putString("data", journal.serialize()).commit())
+                journalError = "无法保存领取记录，已停用自动领取；退出登录仍会继续。请释放存储空间后重新打开。";
+        }
         resettingAccount = true;
         epic.disconnect();
         fabAccount = new JSONObject();
@@ -810,8 +986,11 @@ public class MainActivity extends Activity {
             }
             JSONObject account = new JSONObject().put("connected", epic.connected()).put("displayName", epic.displayName())
                     .put("checkedAt", epic.cachedSnapshot() == null ? 0 : epic.cachedSnapshot().optLong("checkedAt")).put("error", epicSyncError);
+            JSONObject fabStatus = new JSONObject(fabAccount.toString());
+            fabStatus.remove("accountId");
             JSONObject state = new JSONObject().put("items", items).put("updated", updated).put("country", country)
-                    .put("message", message).put("busy", active != null || resettingAccount).put("fabAccount", fabAccount).put("epicAccount", account);
+                    .put("message", message).put("busy", active != null || resettingAccount).put("fabAccount", fabStatus).put("epicAccount", account)
+                    .put("history", journal == null ? new JSONArray() : journal.publicRuns()).put("journalError", journalError);
             catalogue.evaluateJavascript("window.receiveState(" + state + ");", null);
         } catch (JSONException error) { throw new IllegalStateException(error); }
     }
@@ -822,7 +1001,19 @@ public class MainActivity extends Activity {
         else super.onBackPressed();
     }
 
+    @Override public void onResume() {
+        super.onResume();
+        if (catalogue != null && uiReady && active == null && manualCategory == null && !resettingAccount)
+            catalogue.evaluateJavascript("window.refreshIfDue && window.refreshIfDue()", null);
+    }
+
     @Override public void onDestroy() {
+        if (journal != null && journal.running()) {
+            try {
+                journal.pause("应用已关闭，继续前将重新核实库存");
+                getSharedPreferences("claim-journal", MODE_PRIVATE).edit().putString("data", journal.serialize()).commit();
+            } catch (JSONException error) { android.util.Log.e("ClaimJournal", "Unable to checkpoint closing batch", error); }
+        }
         active = null;
         tasks.clear();
         cancelReadTimeout();

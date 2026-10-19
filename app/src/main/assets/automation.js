@@ -14,6 +14,24 @@ function runPocketTask(task) {
   };
   const label = el => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
   const buttons = scope => [...scope.querySelectorAll('button, a[role="button"]')].filter(visible);
+  const requestedActions = new Set(), permittedActions = new Set();
+  PocketStore.onmessage = event => {
+    let reply;
+    try { reply = JSON.parse(event.data); } catch { return; }
+    if (reply.nonce !== task.nonce || reply.type !== 'actionPermit') return;
+    if (reply.error) { finish('error', {message: reply.error}); return; }
+    if (requestedActions.has(reply.stage)) permittedActions.add(reply.stage);
+  };
+  function requestAction(stage, button, beforeClick) {
+    if (permittedActions.delete(stage)) {
+      beforeClick();
+      button.click();
+      if (stage === 'submit') send('ordered');
+    } else if (!requestedActions.has(stage)) {
+      requestedActions.add(stage);
+      send('actionReady', {stage});
+    }
+  }
   async function json(url) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
@@ -41,6 +59,7 @@ function runPocketTask(task) {
   async function fabLibrary() {
     const me = await json('/i/users/me');
     if (!me || typeof me !== 'object') throw new Error('Fab 登录状态无法确认');
+    if (task.accountId && me.uid !== task.accountId) throw new Error('Fab 账号已变化，请返回列表并重新核实账号');
     const owned = new Set(), cursors = new Set();
     let url = '/i/library/search?count=100&source=acquired';
     for (let page = 0; page < 200; page++) {
@@ -53,7 +72,8 @@ function runPocketTask(task) {
       const next = data.cursors?.next;
       if (!next) {
         if (data.results.length === 100 && !data.cursors) throw new Error('素材库缺少分页信息，暂不能判定未拥有');
-        return {owned, displayName: me.displayName || me.username || me.sellerName || 'Fab 账号'};
+        if (typeof me.uid !== 'string' || !me.uid) throw new Error('Fab 账号标识缺失，无法安全绑定领取记录');
+        return {owned, accountId: me.uid, displayName: me.displayName || me.username || me.sellerName || 'Fab 账号'};
       }
       if (cursors.has(next)) throw new Error('素材库分页重复，暂不能确认拥有状态');
       cursors.add(next);
@@ -133,8 +153,7 @@ function runPocketTask(task) {
       const buy = buttons(scope).find(b => /^(buy now|立即购买)$/i.test(label(b)));
       const freeLabel = /(?:-100%|100% off)/i.test(scope.innerText) && /\bfree\b|免费/i.test(scope.innerText);
       if (!buy || !freeLabel) { notice('未能确认当前素材免费；请查看官方页面后手动处理'); return; }
-      clickedGet = true;
-      buy.click();
+      requestAction('product', buy, () => { clickedGet = true; });
       notice('正在打开 Fab 零元结算；首次使用如出现许可协议，请阅读并确认');
     } else {
       const cta = epicCta(scope);
@@ -146,7 +165,7 @@ function runPocketTask(task) {
         return;
       }
       if (task.mode === 'check') { finish('result', {status: 'unowned'}); return; }
-      if (!clickedGet && !cta.disabled) { clickedGet = true; cta.click(); }
+      if (!clickedGet && !cta.disabled) requestAction('product', cta, () => { clickedGet = true; });
     }
   }
   function checkout() {
@@ -176,9 +195,7 @@ function runPocketTask(task) {
     // Consent, age, and marketing choices belong to the user; never tick them automatically.
     const unchecked = [...scope.querySelectorAll('input[type="checkbox"][required]')].some(x => !x.checked);
     if (unchecked) { notice('请阅读并处理官方许可协议，然后程序会继续'); return; }
-    ordered = true;
-    submit.click();
-    send('ordered');
+    requestAction('submit', submit, () => { ordered = true; });
   }
   async function tick() {
     if (finished || busy || !document.body) return;
@@ -195,10 +212,14 @@ function runPocketTask(task) {
         await auth();
       } else if (isTop && task.mode === 'syncFab' && fab) {
         const library = await fabLibrary();
-        finish('ownership', {owned: [...library.owned], checkedAt: Date.now(), displayName: library.displayName});
+        finish('ownership', {owned: [...library.owned], checkedAt: Date.now(), accountId: library.accountId, displayName: library.displayName});
       } else if (isTop && task.mode === 'discover' && ((task.category === 'fab' && fab) || (task.category !== 'fab' && epic))) {
         await discover();
       } else if (task.mode === 'check' || task.mode === 'claim') {
+        if (fab && task.accountId) {
+          const me = await json('/i/users/me');
+          if (me.uid !== task.accountId) throw new Error('Fab 账号已变化，已停止当前项目的自动操作');
+        }
         if (isTop && ((task.category === 'fab' && fab) || (task.category !== 'fab' && epic))) await inspectProduct();
         checkout();
       }

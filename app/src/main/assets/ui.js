@@ -42,7 +42,7 @@ function deadline(item) {
   return '剩余 ' + Math.max(1, Math.ceil(left / 60000)) + ' 分钟';
 }
 
-function currentItems() { return state.items.filter(item => item.category === category); }
+function currentItems() { return state.items.filter(item => item.category === category).map(item => ({...item, availability: PocketDomain.availabilityAt(item)})); }
 function available(items) { return PocketDomain.queue(items, items.map(item => item.key)); }
 function accountForCategory() { return category === 'fab' ? state.fabAccount || {} : state.epicAccount || {}; }
 
@@ -102,7 +102,10 @@ function renderCard(item) {
   titleRow.append(label, element('h3', '', item.title));
   const meta = element('div', 'card-meta');
   if (item.originalPrice) meta.append(element('del', '', item.originalPrice.replace(/^CN¥/, '¥')));
-  meta.append(element('span', 'free-price', item.availability === 'upcoming' ? '即将限免 · 暂不可领取' : '限时免费'), element('span', 'deadline', deadline(item)));
+  let priceLabel = '限时免费';
+  if (item.availability === 'upcoming') priceLabel = '即将限免 · 暂不可领取';
+  if (item.availability === 'expired') priceLabel = '活动已结束';
+  meta.append(element('span', 'free-price', priceLabel), element('span', 'deadline', deadline(item)));
   info.append(titleRow, meta);
   if (item.checkedAt) info.append(element('p', 'card-hint', (item.cached ? '上次同步 ' : '已核实 ') + localTime(item.checkedAt)));
   else if (item.status === 'error') info.append(element('p', 'card-hint', '未把读取失败当作未拥有'));
@@ -117,7 +120,7 @@ function updateSelection() {
   $('select-all').indeterminate = chosen.length > 0 && chosen.length < candidates.length;
   $('select-all').disabled = state.busy || !candidates.length;
   $('selection-count').textContent = chosen.length ? '已选择 ' + chosen.length + ' 项' : '未选择';
-  $('claim').disabled = state.busy || !chosen.length;
+  $('claim').disabled = state.busy || !!state.journalError || !chosen.length;
   const connected = accountForCategory().connected;
   if (state.busy) $('claim').textContent = '处理中…';
   else $('claim').textContent = connected ? '领取所选' : '登录并领取';
@@ -175,6 +178,54 @@ function render() {
   }
   $('updated').textContent = state.updated[category] ? '活动更新于 ' + localTime(state.updated[category]) : '活动尚未更新';
   updateSelection();
+  renderBatchControls();
+  if ($('history-dialog').open) renderHistory();
+}
+
+const resultLabels = {pending: '等待处理', working: '处理中', claimed: '已确认入库', owned: '原已拥有', skipped: '已跳过', failed: '失败，可重试', uncertain: '订单待核实'};
+function recoverable(run) {
+  return run && (run.state === 'paused' || Object.keys(run.errors || {}).length > 0 ||
+    run.entries.some(entry => ['pending', 'working', 'failed', 'uncertain'].includes(entry.status)));
+}
+function renderBatchControls() {
+  const latest = state.history?.[0];
+  $('claim-all').disabled = state.busy || !!state.journalError;
+  $('claim-all').textContent = state.busy ? '正在处理…' : '一键领取本期全部';
+  $('batch-resume').hidden = !recoverable(latest) && !state.journalError;
+  $('batch-note').textContent = state.journalError || '有未完成或待核实的记录。继续时先查库，已拥有不会重复领取。';
+  $('resume-batch').disabled = state.busy || !recoverable(latest) || !!state.journalError;
+}
+function renderHistory() {
+  const runs = state.history || [];
+  const selectedId = $('history-run').value;
+  $('history-run').replaceChildren(...runs.map(run => {
+    const option = element('option', '', localTime(run.startedAt) + (run.state === 'paused' ? ' · 已暂停' : ''));
+    option.value = run.id;
+    return option;
+  }));
+  if (runs.some(run => run.id === selectedId)) $('history-run').value = selectedId;
+  const run = runs.find(entry => entry.id === $('history-run').value);
+  const content = $('history-content');
+  content.replaceChildren();
+  $('retry-batch').disabled = state.busy || !run || run.id !== runs[0]?.id || !recoverable(run) || !!state.journalError;
+  if (!run) { content.append(element('p', 'dialog-note', state.journalError || '还没有领取记录。点击“一键领取本期全部”或选择项目开始。')); return; }
+  const owners = Object.entries(run.owners || {}).map(([platform, owner]) => (platform === 'fab' ? 'Fab：' : 'Epic：') + owner.name);
+  content.append(element('p', 'dialog-note', owners.join('；') || '等待连接并核实账号'));
+  const counts = {};
+  for (const entry of run.entries) counts[entry.status] = (counts[entry.status] || 0) + 1;
+  content.append(element('p', 'history-summary', Object.entries(counts).map(([status, count]) => (resultLabels[status] || status) + ' ' + count + ' 项').join(' · ') || '正在读取活动与库存'));
+  for (const [platform, reason] of Object.entries(run.errors || {})) content.append(element('p', 'dialog-note', (platforms[platform] || platform) + '：' + reason));
+  for (const entry of run.entries) {
+    const row = element('div', 'history-entry');
+    row.append(element('strong', '', entry.title), element('p', '', (platforms[entry.category] || entry.category) + ' · ' + (resultLabels[entry.status] || entry.status)), element('p', '', entry.reason));
+    if (entry.status === 'uncertain' && state.items.some(item => item.key === entry.key)) {
+      const official = element('button', 'secondary', '去官网核实');
+      official.disabled = state.busy;
+      official.onclick = () => { closeDetail(); command('open', {key: entry.key}); };
+      row.append(official);
+    }
+    content.append(row);
+  }
 }
 
 function openDetail(key) {
@@ -208,6 +259,7 @@ function openDetail(key) {
 }
 
 function closeDetail() {
+  if ($('history-dialog').open) { $('history-dialog').close(); return true; }
   if ($('detail-dialog').open) { $('detail-dialog').close(); return true; }
   if ($('account-dialog').open) { $('account-dialog').close(); return true; }
   return false;
@@ -215,6 +267,7 @@ function closeDetail() {
 window.closeDetail = closeDetail;
 window.receiveState = next => {
   state = next;
+  lastPhaseSignature = phaseSignature();
   for (const key of selected) if (!available(state.items).some(item => item.key === key)) selected.delete(key);
   render();
   if ($('detail-dialog').open) {
@@ -225,6 +278,7 @@ window.receiveState = next => {
 };
 for (const button of document.querySelectorAll('[data-tab]')) button.onclick = () => {
   category = button.dataset.tab;
+  lastPhaseSignature = phaseSignature();
   selected.clear();
   render();
   if (!state.updated[category] || Date.now() - state.updated[category] > 300000) command('refresh', {category});
@@ -243,6 +297,12 @@ $('close-detail').onclick = closeDetail;
 $('refresh').onclick = () => command('refresh', {category});
 $('sync').onclick = () => command('check', {category});
 $('claim').onclick = () => command('claim', {category, keys: PocketDomain.queue(currentItems(), [...selected]).map(item => item.key)});
+$('claim-all').onclick = () => { selected.clear(); command('claimAll'); };
+$('resume-batch').onclick = () => command('resumeBatch');
+$('show-history').onclick = () => { renderHistory(); $('history-dialog').showModal(); };
+$('close-history').onclick = closeDetail;
+$('history-run').onchange = renderHistory;
+$('retry-batch').onclick = () => { closeDetail(); command('resumeBatch'); };
 $('login-epic').onclick = () => { closeDetail(); command('login', {category: category === 'android' ? 'android' : 'pc'}); };
 $('login-fab').onclick = () => { closeDetail(); command('login', {category: 'fab'}); };
 function changeAccount(action) {
@@ -253,4 +313,19 @@ function changeAccount(action) {
 $('switch-account').onclick = () => changeAccount('switchAccount');
 $('logout').onclick = () => changeAccount('logout');
 $('country').onchange = event => { closeDetail(); command('country', {country: event.target.value}); };
+let lastPhaseSignature = '', lastAutomaticRefresh = 0;
+function phaseSignature() { return currentItems().map(item => item.key + ':' + item.availability).join('|'); }
+window.refreshIfDue = () => {
+  if (state.busy || document.hidden) return;
+  const signature = phaseSignature();
+  const changed = !!lastPhaseSignature && lastPhaseSignature !== signature;
+  lastPhaseSignature = signature;
+  render();
+  if ((changed || (state.updated[category] && Date.now() - state.updated[category] >= 300000)) && Date.now() - lastAutomaticRefresh >= 60000) {
+    lastAutomaticRefresh = Date.now();
+    command('refresh', {category});
+  }
+};
+setInterval(window.refreshIfDue, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) window.refreshIfDue(); });
 render();

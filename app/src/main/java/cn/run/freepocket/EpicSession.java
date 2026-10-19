@@ -62,6 +62,7 @@ final class EpicSession {
     }
 
     boolean connected() { return saved != null; }
+    String accountId() { return saved == null ? "" : saved.optString("accountId"); }
     String displayName() { return saved == null ? "未连接 Epic" : saved.optString("displayName", "Epic 账号"); }
     JSONObject cachedSnapshot() { return saved == null ? null : saved.optJSONObject("snapshot"); }
 

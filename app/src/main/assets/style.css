@@ -124,6 +124,20 @@ dialog::backdrop { background: #000b; }
 .country-row { display: flex; justify-content: space-between; align-items: center; margin: 18px 16px; font-size: 14px; }
 select { min-height: 44px; padding: 8px 12px; background: #1c3155; border: 1px solid #4d648b; border-radius: 8px; color: white; }
 .build-version { font-size: 11px; color: var(--muted); margin: 22px 16px; }
+.batch-toolbar { display: flex; gap: 10px; margin: 12px 0; }
+.batch-toolbar .primary { flex: 1; font-size: 14px; }
+.batch-resume { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; margin-bottom: 12px; border: 1px solid #8f794e; border-radius: 10px; background: #262b35; }
+.batch-resume[hidden] { display: none; }
+.batch-resume span { flex: 1; min-width: 140px; font-size: 12px; line-height: 1.6; }
+.history-body { padding: 16px; }
+.history-body>label { display: block; font-size: 12px; margin-bottom: 8px; }
+.history-body>select { width: 100%; margin-bottom: 12px; }
+.history-body>.primary { width: 100%; white-space: normal; margin-top: 12px; }
+.history-body .dialog-note { margin: 12px 0 0; }
+.history-summary { font-size: 13px; line-height: 1.8; color: var(--accent); }
+.history-entry { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.history-entry strong { display: block; font-size: 14px; overflow-wrap: anywhere; }
+.history-entry p { font-size: 12px; color: var(--muted); line-height: 1.7; margin: 5px 0 0; }
 @media (max-width: 360px) {
   .hero { padding-inline: 16px; }
   .hero h1 { font-size: 24px; }
@@ -140,12 +154,13 @@ select { min-height: 44px; padding: 8px 12px; background: #1c3155; border: 1px s
 }
 @media (max-height: 740px) {
   .hero { padding-top: 8px; padding-bottom: 4px; }
-  .hero-copy { min-height: 64px; }
+  .hero-copy { display: none; }
   .hero-text { padding: 6px 0; }
   .season-label, .hero p { display: none; }
   .hero h1 { font-size: 22px; line-height: 1.2; }
   .hero-art { height: 64px; width: 47%; bottom: 0; }
   .tabs { margin-top: 8px; }
   .section-heading { margin-top: 8px; }
+  .batch-toolbar { margin: 8px 0; }
 }
 @media (prefers-reduced-motion: no-preference) { button { transition: filter .15s; } }

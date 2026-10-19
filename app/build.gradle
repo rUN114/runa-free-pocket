@@ -1,4 +1,9 @@
 plugins { id 'com.android.application' }
+def signingPropertiesPath = providers.gradleProperty('runaSigningProperties').orNull
+def releaseSigning = new Properties()
+if (signingPropertiesPath != null) {
+    file(signingPropertiesPath).withInputStream { releaseSigning.load(it) }
+}
 android {
     namespace 'cn.run.freepocket'
     compileSdk 35
@@ -6,11 +11,25 @@ android {
         applicationId 'cn.run.freepocket'
         minSdk 26
         targetSdk 35
-        versionCode 8
-        versionName '0.4.1'
+        versionCode 9
+        versionName '1.0.0'
+        testInstrumentationRunner 'cn.run.freepocket.tests.ReleaseVerification'
+    }
+    testBuildType providers.gradleProperty('runaTestBuildType').getOrElse('release')
+    signingConfigs {
+        if (signingPropertiesPath != null) {
+            runaRelease {
+                storeFile file(releaseSigning.getProperty('storeFile'))
+                storePassword releaseSigning.getProperty('storePassword')
+                keyAlias releaseSigning.getProperty('keyAlias')
+                keyPassword releaseSigning.getProperty('keyPassword')
+            }
+        }
     }
     buildTypes {
         release {
+            debuggable false
+            if (signingPropertiesPath != null) signingConfig signingConfigs.runaRelease
             minifyEnabled true
             shrinkResources true
             // WebKit supplies its Chromium boundary-interface keep rules in the AAR.

@@ -10,7 +10,7 @@ function element(text, overrides = {}) {
 }
 async function run({mode='check',category='pc',ctaText='Get',paymentText=null,library=[],fetchError=false,
   libraryPages=null,failLibraryPage=-1,urlOverride=null,authBody='',itemOverrides={},separatePurchaseCard=false,ambiguousCards=false,
-  storeCheckout=false,submitText='Place Order',fabProduct=false} = {}) {
+  storeCheckout=false,submitText='Place Order',fabProduct=false,permitActions=true,accountId='',meUid='user-a'} = {}) {
   const messages = [], ticks = [], requests = [];
   let libraryPage = 0;
   const cta = element(ctaText);
@@ -44,12 +44,15 @@ async function run({mode='check',category='pc',ctaText='Get',paymentText=null,li
   const context = {console,URL,AbortController,location:new URL(urlOverride || url),document:doc,getComputedStyle:()=>({visibility:'visible',display:'block'}),
     setInterval:fn=>ticks.push(fn),setTimeout:fn=>ticks.push(fn),addEventListener:()=>{},
     clearTimeout:()=>{},
-    PocketStore:{postMessage:data=>messages.push(JSON.parse(data))},
+    PocketStore:{postMessage:data=>{
+      const message=JSON.parse(data); messages.push(message);
+      if (permitActions && message.type==='actionReady') context.PocketStore.onmessage({data:JSON.stringify({type:'actionPermit',nonce:'test',stage:message.stage})});
+    }},
     fetch:async request=>{
       requests.push(request);
       if (request.includes('/blades/')) return {ok:true,json:async()=>({isLimitedFreeContent:true,blockContentType:'listings',
         tiles:[{listing:{uid:'12345678-abcd-abcd-abcd-123456789012',title:'Test asset'}}]})};
-      if (request.includes('/users/me')) return {ok:!fetchError,status:fetchError?401:200,json:async()=>({uid:'user-a',displayName:'Test Fab'})};
+      if (request.includes('/users/me')) return {ok:!fetchError,status:fetchError?401:200,json:async()=>({uid:meUid,displayName:'Test Fab'})};
       const index=libraryPage++;
       return {ok:!fetchError&&index!==failLibraryPage,status:fetchError?401:index===failLibraryPage?503:200,
         json:async()=>libraryPages?libraryPages[index]:{results:library,cursors:{next:null}}};
@@ -57,10 +60,40 @@ async function run({mode='check',category='pc',ctaText='Get',paymentText=null,li
   context.window = context; context.top = context;
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(base,'domain.js'),'utf8')+'\n'+fs.readFileSync(path.join(base,'automation.js'),'utf8'), context);
-  context.runPocketTask({nonce:'test',mode,category,country:'CN',item:{id:'12345678-abcd-abcd-abcd-123456789012',url,...itemOverrides}});
+  context.runPocketTask({nonce:'test',mode,category,country:'CN',accountId,item:{id:'12345678-abcd-abcd-abcd-123456789012',url,...itemOverrides}});
   await ticks[0]();
-  return {messages,cta,submit,tick:ticks[0],requests,showFabLibrary:()=>{libraryVisible=true;}};
+  if (permitActions) { await ticks[0](); await ticks[0](); }
+  return {messages,cta,submit,payment,tick:ticks[0],requests,showFabLibrary:()=>{libraryVisible=true;},
+    permit:stage=>context.PocketStore.onmessage({data:JSON.stringify({type:'actionPermit',nonce:'test',stage})})};
 }
+
+test('claim actions wait for the native durable checkpoint before any click', async () => {
+  const result=await run({mode:'claim',paymentText:'Total $0.00',permitActions:false});
+  assert.equal(result.cta.clicks,undefined);assert.equal(result.submit.clicks,undefined);
+  assert.ok(result.messages.some(m=>m.type==='actionReady'&&m.stage==='submit'));
+  result.permit('product');result.permit('submit');await result.tick();await result.tick();
+  assert.equal(result.cta.clicks,1);assert.equal(result.submit.clicks,1);
+  result.permit('submit');await result.tick();assert.equal(result.submit.clicks,1);
+});
+
+test('checkout rechecks price after the checkpoint reply rather than clicking a stale zero total', async () => {
+  const result=await run({mode:'claim',paymentText:'Total $0.00',permitActions:false});
+  result.payment.innerText='Total $5.00';result.permit('submit');await result.tick();
+  assert.equal(result.submit.clicks,undefined);assert.ok(result.messages.some(m=>m.type==='blocked'));
+});
+
+test('Fab identity changes stop both the product action and the checkout submit', async () => {
+  for (const options of [{fabProduct:true}, {storeCheckout:true,urlOverride:'https://www.fab.com/payment/web/purchase',paymentText:'Total $0.00'}]) {
+    const result=await run({mode:'claim',category:'fab',accountId:'user-a',meUid:'user-b',...options});
+    assert.equal(result.cta.clicks,undefined);assert.equal(result.submit.clicks,undefined);
+    assert.ok(result.messages.some(message=>message.type==='error'));
+  }
+});
+
+test('Fab checkout preserves one-time submission for the bound account', async () => {
+  const result=await run({mode:'claim',category:'fab',accountId:'user-a',storeCheckout:true,urlOverride:'https://www.fab.com/payment/web/purchase',paymentText:'Total $0.00'});
+  assert.equal(result.submit.clicks,1);await result.tick();assert.equal(result.submit.clicks,1);
+});
 test('Epic: main CTA confirms owned without touching checkout', async () => {
   const result = await run({ctaText:'In Library'});
   assert.equal(result.messages[0].status,'owned'); assert.equal(result.cta.clicks,undefined);

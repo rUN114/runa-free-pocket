@@ -160,13 +160,18 @@
     const amount = moneyValue(prices[0], true);
     return amount === null ? null : amount === 0;
   }
+  function availabilityAt(item, now = Date.now()) {
+    if (item.end && promotionTime(item.end) <= now) return 'expired';
+    if (item.start) return promotionTime(item.start) > now ? 'upcoming' : 'active';
+    return item.availability || 'active';
+  }
   function queue(items, keys) {
     const wanted = new Set(keys);
     return items.filter(item => wanted.has(item.key) && !['owned', 'expired'].includes(item.status) &&
-      item.availability !== 'upcoming' && (!item.start || promotionTime(item.start) <= Date.now()) &&
+      !['upcoming', 'expired'].includes(availabilityAt(item)) && (!item.start || promotionTime(item.start) <= Date.now()) &&
       (!item.end || Date.parse(item.end) > Date.now()));
   }
-  const api = {parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, zeroTotal, zeroFreeCheckout, queue};
+  const api = {parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, availabilityAt, zeroTotal, zeroFreeCheckout, queue};
   if (typeof module !== 'undefined') module.exports = api;
   root.PocketDomain = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
