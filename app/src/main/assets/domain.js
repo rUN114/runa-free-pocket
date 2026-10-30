@@ -171,7 +171,13 @@
       !['upcoming', 'expired'].includes(availabilityAt(item)) && (!item.start || promotionTime(item.start) <= Date.now()) &&
       (!item.end || Date.parse(item.end) > Date.now()));
   }
-  const api = {parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, availabilityAt, zeroTotal, zeroFreeCheckout, queue};
+  function fabTier(text) {
+    const personal = /\bpersonal\b|个人(?:版|许可)/i.test(text);
+    const professional = /\bprofessional\b|专业(?:版|许可)/i.test(text);
+    if (personal === professional) return "";
+    return personal ? "personal" : "professional";
+  }
+  const api = {fabTier, parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, availabilityAt, zeroTotal, zeroFreeCheckout, queue};
   if (typeof module !== 'undefined') module.exports = api;
   root.PocketDomain = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

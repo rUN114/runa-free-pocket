@@ -164,3 +164,5 @@ select { min-height: 44px; padding: 8px 12px; background: #1c3155; border: 1px s
   .batch-toolbar { margin: 8px 0; }
 }
 @media (prefers-reduced-motion: no-preference) { button { transition: filter .15s; } }
+
+.country-row select { min-width: 0; max-width: 58%; }

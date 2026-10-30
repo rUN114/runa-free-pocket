@@ -84,7 +84,8 @@ function renderCard(item) {
   preview.setAttribute('aria-label', '查看 ' + item.title + ' 的详情与图片');
   preview.append(cover(item, ''));
   preview.onclick = () => openDetail(item.key);
-  const statusText = statuses[item.status] || statuses.unknown;
+  let statusText = statuses[item.status] || statuses.unknown;
+  if (item.category === 'fab' && item.status === 'owned') statusText = '素材已拥有 · 档位未知';
   const ownership = element('span', 'ownership ' + item.status, statusText + (item.cached && item.status === 'owned' ? ' · 缓存' : ''));
   const info = element('div', 'card-info');
   const titleRow = element('div', 'card-title');
@@ -146,6 +147,8 @@ function render() {
   $('sync-time').textContent = account.checkedAt ? '拥有状态同步于 ' + localTime(account.checkedAt) : '连接后自动核实拥有状态';
   $('message').textContent = state.message;
   $('country').value = state.country;
+  $('fab-tier').value = state.fabTier || '';
+  $('fab-tier').disabled = state.busy;
   if (account.error) $('account').textContent = '检查账号';
   else $('account').textContent = account.connected ? '账号已连接' : '连接账号';
   $('epic-name').textContent = state.epicAccount?.connected ? state.epicAccount.displayName : '未连接';
@@ -211,12 +214,14 @@ function renderHistory() {
   if (!run) { content.append(element('p', 'dialog-note', state.journalError || '还没有领取记录。点击“一键领取本期全部”或选择项目开始。')); return; }
   const owners = Object.entries(run.owners || {}).map(([platform, owner]) => (platform === 'fab' ? 'Fab：' : 'Epic：') + owner.name);
   content.append(element('p', 'dialog-note', owners.join('；') || '等待连接并核实账号'));
+  content.append(element('p', 'dialog-note', 'Fab 请求档位：' + (run.fabTier || '未知（旧记录或尚未领取）') + '；素材拥有状态不证明该档位授权'));
   const counts = {};
   for (const entry of run.entries) counts[entry.status] = (counts[entry.status] || 0) + 1;
   content.append(element('p', 'history-summary', Object.entries(counts).map(([status, count]) => (resultLabels[status] || status) + ' ' + count + ' 项').join(' · ') || '正在读取活动与库存'));
   for (const [platform, reason] of Object.entries(run.errors || {})) content.append(element('p', 'dialog-note', (platforms[platform] || platform) + '：' + reason));
   for (const entry of run.entries) {
     const row = element('div', 'history-entry');
+    if (entry.category === 'fab') row.append(element('p', '', '商品页确认档位：' + (entry.selectedFabTier || '未知') + '（不是独立授权证明）'));
     row.append(element('strong', '', entry.title), element('p', '', (platforms[entry.category] || entry.category) + ' · ' + (resultLabels[entry.status] || entry.status)), element('p', '', entry.reason));
     if (entry.status === 'uncertain' && state.items.some(item => item.key === entry.key)) {
       const official = element('button', 'secondary', '去官网核实');
@@ -312,6 +317,7 @@ function changeAccount(action) {
 }
 $('switch-account').onclick = () => changeAccount('switchAccount');
 $('logout').onclick = () => changeAccount('logout');
+$('fab-tier').onchange = event => command('fabTier', {tier:event.target.value});
 $('country').onchange = event => { closeDetail(); command('country', {country: event.target.value}); };
 let lastPhaseSignature = '', lastAutomaticRefresh = 0;
 function phaseSignature() { return currentItems().map(item => item.key + ':' + item.availability).join('|'); }

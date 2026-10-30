@@ -13,14 +13,22 @@ function runPocketTask(task) {
     return box.width > 0 && box.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
   };
   const label = el => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  function licenseText(control) {
+    if (control.tagName === 'SELECT') return control.selectedOptions[0]?.textContent || '';
+    return label(control);
+  }
   const buttons = scope => [...scope.querySelectorAll('button, a[role="button"]')].filter(visible);
   const requestedActions = new Set(), permittedActions = new Set();
+  let selectedFabTier = "";
   PocketStore.onmessage = event => {
     let reply;
     try { reply = JSON.parse(event.data); } catch { return; }
     if (reply.nonce !== task.nonce || reply.type !== 'actionPermit') return;
     if (reply.error) { finish('error', {message: reply.error}); return; }
-    if (requestedActions.has(reply.stage)) permittedActions.add(reply.stage);
+    if (requestedActions.has(reply.stage)) {
+      permittedActions.add(reply.stage);
+      if (reply.stage === "product" && reply.fabTierVerified === true) task.fabTierVerified = true;
+    }
   };
   function requestAction(stage, button, beforeClick) {
     if (permittedActions.delete(stage)) {
@@ -29,7 +37,7 @@ function runPocketTask(task) {
       if (stage === 'submit') send('ordered');
     } else if (!requestedActions.has(stage)) {
       requestedActions.add(stage);
-      send('actionReady', {stage});
+      send('actionReady', {stage, fabTier: selectedFabTier});
     }
   }
   async function json(url) {
@@ -138,6 +146,10 @@ function runPocketTask(task) {
     if (!scope) return;
     if (task.category === 'fab') {
       if (clickedGet) {
+        const currentLicense = scope.querySelector('#license-select');
+        if (currentLicense && D.fabTier(licenseText(currentLicense)) !== task.fabTier) {
+          finish('licenseInvalidated'); return;
+        }
         // Fab closes its checkout on success and replaces Buy now with this library link.
         // It only requests a fresh acquired-library check; the link does not prove ownership.
         const libraryLink = [...scope.querySelectorAll('a[href]')].find(link => visible(link) &&
@@ -153,6 +165,26 @@ function runPocketTask(task) {
       const buy = buttons(scope).find(b => /^(buy now|立即购买)$/i.test(label(b)));
       const freeLabel = /(?:-100%|100% off)/i.test(scope.innerText) && /\bfree\b|免费/i.test(scope.innerText);
       if (!buy || !freeLabel) { notice('未能确认当前素材免费；请查看官方页面后手动处理'); return; }
+      const license = scope.querySelector('#license-select');
+      if (!task.fabTier || !license || !visible(license)) {
+        notice('未找到明确的 Fab 许可选择控件，请检查设置和官方页面；未点击领取');
+        return;
+      }
+      const selectedLicense = licenseText(license);
+      const chosen = D.fabTier(selectedLicense);
+      if (chosen !== task.fabTier) {
+        if (license.getAttribute('aria-expanded') !== 'true') license.click();
+        const options = [...document.querySelectorAll('[role="option"]')].filter(option => visible(option) &&
+          option.getAttribute('aria-disabled') !== 'true' && D.fabTier(label(option)) === task.fabTier);
+        if (options.length === 1) options[0].click();
+        notice('正在选择 Fab ' + task.fabTier + ' 许可；选择确认后才继续');
+        return;
+      }
+      if (!/(?:-100%|100% off)/i.test(selectedLicense) || !/\bfree\b|免费/i.test(selectedLicense)) {
+        notice('所选许可档位未明确显示限时免费，未打开结算');
+        return;
+      }
+      selectedFabTier = chosen;
       requestAction('product', buy, () => { clickedGet = true; });
       notice('正在打开 Fab 零元结算；首次使用如出现许可协议，请阅读并确认');
     } else {
@@ -182,6 +214,14 @@ function runPocketTask(task) {
       buttons(scope).some(button => /^continue browsing$/i.test(label(button)));
     if (heading || currentReceipt) { finish('checkoutComplete'); return; }
     if (ordered) return;
+    if (task.category === 'fab') {
+      const orderLicense = scope.querySelector('#license-select');
+      const orderTier = orderLicense ? D.fabTier(licenseText(orderLicense)) : '';
+      if (!task.fabTier || !task.fabTierVerified || (orderLicense && orderTier !== task.fabTier)) {
+        notice('尚未取得本次商品页许可的原生确认，或结算档位不一致；已暂停自动提交');
+        return;
+      }
+    }
     const submit = buttons(scope).find(b => /^(place order|add to library|下单|下订单|加入库|添加到库)$/i.test(label(b)));
     if (!submit || submit.disabled) return;
     let free = D.zeroTotal(scope.innerText);

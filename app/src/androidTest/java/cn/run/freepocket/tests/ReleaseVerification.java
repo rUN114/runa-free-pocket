@@ -42,7 +42,7 @@ public final class ReleaseVerification extends Instrumentation {
             output = new File(getTargetContext().getExternalFilesDir(null), "verification");
             if (!output.isDirectory() && !output.mkdirs()) throw new IllegalStateException("Cannot create test output");
             String mode = arguments.getString("mode", "inspect");
-            if (!java.util.Arrays.asList("inspect", "batch", "resume", "interrupt", "fixture").contains(mode)) throw new IllegalStateException("Unknown verification mode");
+            if (!java.util.Arrays.asList("inspect", "batch", "resume", "interrupt", "fixture", "fabCheckoutInspect", "networkErrorInspect").contains(mode)) throw new IllegalStateException("Unknown verification mode");
             if (mode.equals("fixture") && (getTargetContext().getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) == 0)
                 throw new IllegalStateException("Fixture mode requires the separate diagnostic build");
             if (!mode.equals("fixture") && (getTargetContext().getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0)
@@ -56,6 +56,42 @@ public final class ReleaseVerification extends Instrumentation {
                 runOnMainSync(() -> catalogue = findCatalogue(activity.getWindow().getDecorView()));
                 return catalogue != null && "true".equals(js(catalogue, "typeof window.receiveState==='function'&&!state.busy"));
             }, 100000, "Initial catalogue did not become ready");
+            if (mode.equals("networkErrorInspect")) {
+                runOnMainSync(() -> {
+                    WebView store=findStore(activity.getWindow().getDecorView());
+                    ((View)store.getParent()).setVisibility(View.VISIBLE);
+                    store.loadUrl("https://www.fab.com:1/login?state=test_value_must_not_be_in_status");
+                });
+                String[] status=new String[1];
+                waitFor(() -> {
+                    runOnMainSync(() -> status[0]=findErrorStatus(activity.getWindow().getDecorView()));
+                    return status[0]!=null;
+                }, 20000, "Native network error was not shown");
+                if (!status[0].contains("www.fab.com") || status[0].contains("test_value_must_not_be_in_status") || status[0].contains("?state="))
+                    throw new IllegalStateException("Error status missing host or leaking query");
+                write("network-error-inspect.json",new JSONObject().put("fixtureOnly",true).put("officialOrders",0).put("nativeStatus",status[0]).toString());
+                result.putString("verification","passed; actual release WebView failure and native redacted error status; no orders");
+                finish(Activity.RESULT_OK,result); return;
+            }
+            if (mode.equals("fabCheckoutInspect")) {
+                WebView[] store = new WebView[1];
+                runOnMainSync(() -> {
+                    store[0] = findStore(activity.getWindow().getDecorView());
+                    ((View) store[0].getParent()).setVisibility(View.VISIBLE);
+                    store[0].loadUrl("https://www.fab.com/listings/be5ed72e-f542-41f4-b747-bdb343eef609?lang=en");
+                });
+                waitFor(() -> "true".equals(js(store[0], "!!document.querySelector('#license-select')")), 90000, "Fab product requires login or could not load");
+                js(store[0], "document.querySelector('#license-select').click(),true");
+                waitFor(() -> "true".equals(js(store[0], "[...document.querySelectorAll('[role=option]')].some(e=>/^Professional/i.test(e.innerText))")), 10000, "License options missing");
+                js(store[0], "[...document.querySelectorAll('[role=option]')].find(e=>/^Professional/i.test(e.innerText)).click(),true");
+                waitFor(() -> "true".equals(js(store[0], "document.querySelector('#license-select').innerText.toLowerCase().includes('professional')")), 10000, "Professional selection not confirmed");
+                js(store[0], "[...document.querySelectorAll('button')].find(e=>/^buy now$/i.test(e.innerText.trim())).click(),true");
+                SystemClock.sleep(8000);
+                write("fab-checkout-dom.json", js(store[0], "JSON.stringify({path:location.pathname,frames:[...document.querySelectorAll('iframe')].map(e=>{try{return new URL(e.src).origin+new URL(e.src).pathname}catch{return ''}}),controls:[...document.querySelectorAll('button,select,label,[role=dialog],h1,h2,h3')].map(e=>({tag:e.tagName,id:e.id,testid:e.getAttribute('data-testid'),text:e.innerText})).filter(e=>/license|personal|professional|total|free|library|order/i.test(e.text)).map(e=>({...e,text:e.text.slice(0,4000)}))})"));
+                screenshot("fab-checkout-inspect.png");
+                result.putString("verification", "checkout inspection only; no submit button clicked");
+                finish(Activity.RESULT_OK, result); return;
+            }
             if (mode.equals("inspect")) {
                 result.putString("verification", "passed; actual release startup; no claiming requested");
                 finish(Activity.RESULT_OK, result);
@@ -120,6 +156,26 @@ public final class ReleaseVerification extends Instrumentation {
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) { WebView result = findCatalogue(group.getChildAt(i)); if (result != null) return result; }
+        }
+        return null;
+    }
+
+    private String findErrorStatus(View view) {
+        if (view instanceof android.widget.TextView) {
+            String text=((android.widget.TextView)view).getText().toString();
+            if(text.startsWith("页面加载失败"))return text;
+        }
+        if(view instanceof ViewGroup) for(int i=0;i<((ViewGroup)view).getChildCount();i++) {
+            String text=findErrorStatus(((ViewGroup)view).getChildAt(i)); if(text!=null)return text;
+        }
+        return null;
+    }
+
+    private WebView findStore(View view) {
+        if (view instanceof WebView && view != catalogue) return (WebView)view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group=(ViewGroup)view;
+            for(int i=0;i<group.getChildCount();i++) { WebView found=findStore(group.getChildAt(i)); if(found!=null)return found; }
         }
         return null;
     }

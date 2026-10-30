@@ -68,6 +68,15 @@ const server = http.createServer((request, response) => {
     await page.evaluate(value=>receiveState({...value,journalError:'记录损坏，自动领取已停止'}),sample);
     assert.equal(await page.locator('#claim-all').isDisabled(),true);
     assert.equal(await page.locator('#resume-batch').isDisabled(),true);
+    await page.evaluate(()=>receiveState({...state,busy:false,fabTier:'personal',journalError:''}));
+    await page.locator('#account').click();
+    await page.locator('#fab-tier').selectOption('professional');
+    assert.deepEqual(await page.evaluate(()=>commands.at(-1)),{action:'fabTier',tier:'professional'});
+    for (const width of [320,360,390,480]) {
+      await page.setViewportSize({width,height:780});
+      assert.ok(await page.locator('#account-dialog').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+    }
+    await page.locator('#close-account').click();
     assert.deepEqual(errors,[]);
     console.log('UI fixture checks passed: 4 widths, all-category action, selection, resume/history, pending orders, time boundaries, busy controls and account switch. No live orders.');
   } finally { await browser.close(); server.close(); }

@@ -62,6 +62,8 @@ public class MainActivity extends Activity {
     private String journalError = "";
     private OfficialImages images;
     private String country = "CN";
+    private String fabTier = "";
+    private long storeNavigation = 0;
     private String message = "正在读取本期免费内容…";
     private String completionNote = "";
     private String epicSyncError = "";
@@ -96,6 +98,7 @@ public class MainActivity extends Activity {
             scriptSource = readAsset("domain.js") + "\n" + readAsset("automation.js");
             loadCache();
         } catch (IOException error) { throw new IllegalStateException("应用脚本资源缺失", error); }
+        fabTier = getSharedPreferences("catalogue", MODE_PRIVATE).getString("fabTier", "");
         initializeSession();
         try { journal = new ClaimJournal(getSharedPreferences("claim-journal", MODE_PRIVATE).getString("data", "{}")); }
         catch (JSONException error) { journalError = "领取记录无法读取，为防止重复订单已停用自动领取，请保留应用数据并检查记录。"; }
@@ -221,6 +224,26 @@ public class MainActivity extends Activity {
         verifyButton = addButton(controls, "核实结果", this::verifyCurrent);
         addButton(controls, "跳过此项", this::skip);
         browser.addView(controls);
+        addButton(controls, "网络诊断", () -> {
+            AlertDialog probe = new AlertDialog.Builder(this).setTitle("连接诊断")
+                    .setMessage("正在检查 Fab、Epic 登录和结算域名…").setPositiveButton("关闭", null).show();
+            network.execute(() -> {
+                StringBuilder summary = new StringBuilder("只检查系统 HTTPS 连接，不发送账号 Cookie；不代表 WebView 登录或领取成功。\n");
+                for (String endpoint : Arrays.asList("https://www.fab.com/login", "https://www.epicgames.com/id/login", "https://www.epicgames.com/payment/")) {
+                    java.net.HttpURLConnection connection = null;
+                    String host = java.net.URI.create(endpoint).getHost();
+                    try {
+                        connection = (java.net.HttpURLConnection) new java.net.URL(endpoint).openConnection();
+                        connection.setConnectTimeout(8000); connection.setReadTimeout(8000);
+                        connection.setInstanceFollowRedirects(false); connection.setRequestMethod("HEAD");
+                        summary.append("\n").append(host).append(": HTTP ").append(connection.getResponseCode());
+                    } catch (IOException error) { summary.append("\n").append(host).append(": ").append(error.getClass().getSimpleName()); }
+                    finally { if (connection != null) connection.disconnect(); }
+                }
+                summary.append("\n\nHTTP 响应表示到达了服务器；403/429仍可能受到限制。可切换网络后对照检查。");
+                handler.post(() -> { if (!isDestroyed() && probe.isShowing()) probe.setMessage(summary.toString()); });
+            });
+        });
         createStoreView();
         root.addView(browser, new FrameLayout.LayoutParams(-1, -1));
         browser.setVisibility(View.GONE);
@@ -237,7 +260,19 @@ public class MainActivity extends Activity {
                 return !"https".equals(request.getUrl().getScheme());
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                long navigation = ++storeNavigation;
+                handler.postDelayed(() -> {
+                    if (navigation != storeNavigation || store.getProgress() >= 100 || browser.getVisibility() != View.VISIBLE) return;
+                    browserStatus.setText("官方页面加载超过45秒。可重试连接，或切换网络后重试。\n如已提交订单，请先核实结果，不要重复下单。");
+                }, 45000);
                 Uri uri = Uri.parse(url);
+                if (active != null && active.optString("category").equals("fab") && active.optBoolean("fabTierVerified")) {
+                    String productPath = Uri.parse(active.optJSONObject("item").optString("url")).getPath();
+                    boolean productPage = "www.fab.com".equals(uri.getHost()) && java.util.Objects.equals(productPath, uri.getPath());
+                    boolean checkoutPage = ("www.fab.com".equals(uri.getHost()) && "/payment/web/purchase".equals(uri.getPath()))
+                            || ("www.epicgames.com".equals(uri.getHost()) && uri.getPath() != null && uri.getPath().startsWith("/payment/"));
+                    if (!productPage && !checkoutPage) active.remove("fabTierVerified");
+                }
                 browserAddress.setText(uri.getHost());
                 boolean login = "www.epicgames.com".equals(uri.getHost()) && uri.getPath() != null
                         && uri.getPath().startsWith("/id/login");
@@ -248,8 +283,37 @@ public class MainActivity extends Activity {
                 catch (JSONException error) { fail("拥有状态无法重置，请重新刷新。"); }
                 if (active != null) fail("Epic 网页登录已过期，请重新连接账号后继续领取。");
             }
+            @Override public void onPageFinished(WebView view, String url) { storeNavigation++; }
+            @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (request.isForMainFrame()) browserStatus.setText("官方页面返回 HTTP " + response.getStatusCode() + " · " + request.getUrl().getHost()
+                        + "\n403可能为访问限制，429为请求过多，5xx为服务端异常；尚未确认根因。");
+            }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) browserStatus.setText("网页加载失败，请检查网络，返回列表后重试。");
+                if (!request.isForMainFrame()) return;
+                String phase = "浏览官方页面";
+                if (active != null) {
+                    String mode = active.optString("mode");
+                    if (mode.equals("auth")) phase = "官方登录";
+                    else if (mode.equals("discover")) phase = "读取活动";
+                    else if (mode.equals("syncFab")) phase = "同步素材库";
+                    else if (mode.equals("claim")) phase = "领取与结算";
+                    else phase = "核实拥有状态";
+                }
+                String detail = error.getDescription().toString();
+                java.util.regex.Matcher codeMatch = java.util.regex.Pattern.compile("net::ERR_[A-Z_]+").matcher(detail);
+                String code = codeMatch.find() ? codeMatch.group() : "WebView " + error.getErrorCode();
+                browserStatus.setText("页面加载失败 · " + phase + "\n" + request.getUrl().getHost() + " · " + code
+                        + "\n原因尚未确定，可切换网络后点重试；如已提交订单，请先核实结果。");
+                storeNavigation++;
+                if (active != null && Arrays.asList("auth", "discover", "syncFab").contains(active.optString("mode"))
+                        && Arrays.asList(WebViewClient.ERROR_CONNECT, WebViewClient.ERROR_TIMEOUT).contains(error.getErrorCode())
+                        && active.optInt("readRetry") == 0) {
+                    JSONObject retryTask = active;
+                    try { retryTask.put("readRetry", 1); }
+                    catch (JSONException invalid) { fail("无法记录页面重试状态，请返回列表重试。"); return; }
+                    browserStatus.append("\n将在1.5秒后重试一次；不会重试订单提交。");
+                    handler.postDelayed(() -> { if (active == retryTask) verifyCurrent(); }, 1500);
+                }
             }
         });
         WebViewCompat.addWebMessageListener(store, "PocketStore", STORE_ORIGINS,
@@ -300,6 +364,13 @@ public class MainActivity extends Activity {
             if (!saveJournal()) return;
             queueBatch();
             return;
+        }
+        if (action.equals("fabTier")) {
+            String choice = command.getString("tier");
+            if (!Arrays.asList("personal", "professional", "").contains(choice)) return;
+            fabTier = choice;
+            getSharedPreferences("catalogue", MODE_PRIVATE).edit().putString("fabTier", choice).apply();
+            publish(); return;
         }
         if (action.equals("country")) {
             String choice = command.getString("country");
@@ -522,6 +593,14 @@ public class MainActivity extends Activity {
                 message = "正在读取 Epic 电脑游戏官方活动…";
                 publish(); requestPcCatalogue(nonce); return;
             }
+            if (category.equals("fab") && mode.equals("claim")) {
+                if (fabTier.isEmpty()) { fail("请在账号与同步中明确选择 Fab 许可档位后重试。"); return; }
+                String previousTier = journal.current().optString("fabTier");
+                if (!previousTier.isEmpty() && !previousTier.equals(fabTier)) { fail("当前许可档位与原任务不一致，请恢复原档位或开始新任务。"); return; }
+                journal.current().put("fabTier", fabTier);
+                active.put("fabTier", fabTier);
+                if (!saveJournal()) return;
+            }
             script = WebViewCompat.addDocumentStartJavaScript(store,
                     scriptSource + "\nrunPocketTask(" + active + ");", STORE_ORIGINS);
             String url = category.equals("fab") ? "https://www.fab.com/limited-time-free?lang=en" : "https://store.epicgames.com/en-US/free-games";
@@ -677,15 +756,36 @@ public class MainActivity extends Activity {
         String category = active.getString("category");
         String mode = active.getString("mode");
         String productOrigin = category.equals("fab") ? "https://www.fab.com" : "https://store.epicgames.com";
+        if (type.equals("licenseInvalidated")) {
+            if (!main || !origin.equals("https://www.fab.com") || !category.equals("fab") || !mode.equals("claim")) return;
+            active.remove("fabTierVerified");
+            fail("商品页许可在领取过程中发生变化，已停止；请先核实订单结果。"); return;
+        }
         if (type.equals("actionReady")) {
             if (!mode.equals("claim") || !active.has("item") || journal == null || !journal.running()) return;
             String stage = data.getString("stage");
             if (stage.equals("product") && (!main || !origin.equals(productOrigin))) return;
             if (!bindBatchAccount(category)) return;
+            if (category.equals("fab")) {
+                if (stage.equals("product")) {
+                    if (!active.getString("fabTier").equals(data.optString("fabTier"))) {
+                        fail("商品页许可与所选档位不一致，未打开结算。"); return;
+                    }
+                    active.put("fabTierVerified", true);
+                    journal.entry(active.getJSONObject("item").getString("key")).put("selectedFabTier", active.getString("fabTier"));
+                } else if (!active.optBoolean("fabTierVerified")) {
+                    fail("未取得本次商品页许可确认，未提交订单。"); return;
+                }
+            }
             try { journal.reserve(active.getJSONObject("item").getString("key"), stage); }
             catch (JSONException error) { fail("此项目存在待核实操作或重复请求，请先在领取记录中核实。"); return; }
             if (!saveJournal()) return;
-            reply.postMessage(new JSONObject().put("type", "actionPermit").put("nonce", active.getString("nonce")).put("stage", stage).toString());
+            if (category.equals("fab") && stage.equals("product")) {
+                removeScript();
+                script = WebViewCompat.addDocumentStartJavaScript(store,
+                        scriptSource + "\nrunPocketTask(" + active + ");", STORE_ORIGINS);
+            }
+            reply.postMessage(new JSONObject().put("fabTierVerified", active.optBoolean("fabTierVerified")).put("type", "actionPermit").put("nonce", active.getString("nonce")).put("stage", stage).toString());
             return;
         }
         if (Arrays.asList("catalogue", "result", "error", "ownership").contains(type)
@@ -988,7 +1088,7 @@ public class MainActivity extends Activity {
                     .put("checkedAt", epic.cachedSnapshot() == null ? 0 : epic.cachedSnapshot().optLong("checkedAt")).put("error", epicSyncError);
             JSONObject fabStatus = new JSONObject(fabAccount.toString());
             fabStatus.remove("accountId");
-            JSONObject state = new JSONObject().put("items", items).put("updated", updated).put("country", country)
+            JSONObject state = new JSONObject().put("items", items).put("updated", updated).put("country", country).put("fabTier", fabTier)
                     .put("message", message).put("busy", active != null || resettingAccount).put("fabAccount", fabStatus).put("epicAccount", account)
                     .put("history", journal == null ? new JSONArray() : journal.publicRuns()).put("journalError", journalError);
             catalogue.evaluateJavascript("window.receiveState(" + state + ");", null);
