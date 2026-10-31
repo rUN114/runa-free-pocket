@@ -47,7 +47,7 @@ APK SHA-256：
 
 ## 开发与构建
 
-用 Android Studio 打开本目录。需要 JDK 17+、Android SDK Platform 35、Build Tools 36，附 Gradle 9.3.0 Wrapper。
+用 Android Studio 打开本目录。需要 JDK 17+、Android SDK Platform 35、Build Tools 36，附 Gradle 9.8.2 Wrapper（固定官方发行包 SHA256）。
 
 ```powershell
 # local.properties 配置自己的 SDK，例如 sdk.dir=D\:/Android/Sdk

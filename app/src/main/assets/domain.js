@@ -139,20 +139,40 @@
     if (!amount || (requireCurrency && !amount[1] && !amount[3])) return null;
     return Number(amount[2].replace(',', '.'));
   }
-  function zeroTotal(text) {
+  function totalState(text, productTitle = '') {
     const lines = String(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const totals = [];
     for (let i = 0; i < lines.length; i++) {
       const label = lines[i].match(/^(?:(?:order|grand)\s+)?(?:total\b|总计|合计|總計)\s*[:：]?\s*(.*)$/i);
-      if (label) totals.push(label[1] || lines[i + 1] || '');
+      if (!label) continue;
+      // Never exclude a bare Total label or a monetary amount, even if it matches the title.
+      if (productTitle && lines[i] === productTitle.trim() && label[1] && moneyValue(label[1]) === null) continue;
+      totals.push(label[1] || lines[i + 1] || '');
     }
-    if (totals.length !== 1) return null;
+    if (!totals.length) return 'missing';
+    if (totals.length !== 1) return 'ambiguous';
     const amount = moneyValue(totals[0]);
-    return amount === null ? null : amount === 0;
+    if (amount === null) return 'unreadable';
+    return amount === 0 ? 'zero' : 'nonzero';
+  }
+  function zeroTotal(text, productTitle = '') {
+    const state = totalState(text, productTitle);
+    if (state === 'zero') return true;
+    if (state === 'nonzero') return false;
+    return null;
+  }
+  function fabCheckoutTier(text) {
+    const tiers = [];
+    for (const line of String(text).split(/\r?\n/)) {
+      const summary = line.trim().match(/^(?:(?:license(?: type)?|许可(?:类型)?|授权(?:类型)?)\s*[:：]\s*(personal|professional)|(personal|professional)\s+license)$/i);
+      if (summary) tiers.push((summary[1] || summary[2]).toLowerCase());
+    }
+    return tiers.length === 1 ? tiers[0] : '';
   }
   function zeroFreeCheckout(text) {
     const lines = String(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    if (!/This is free\. Add it to your library to get started\./i.test(lines.join(' '))) return null;
+    const freeCard = /This is free\. Add it to your library to get started\.|这是免费的[。.]\s*将其添加到您的游戏库即可开始[。.]|此内容免费[。.]\s*添加到游戏库即可开始[。.]/i;
+    if (!freeCard.test(lines.join(' '))) return null;
     // An existing total must be handled by zeroTotal, never bypassed by the free-card layout.
     if (lines.some(line => /^(?:(?:order|grand)\s+)?(?:total\b|总计|合计|總計)/i.test(line))) return null;
     const prices = lines.filter(line => /\b(?:USD|EUR|GBP|CNY|HKD|JPY|RMB)\b|US\$|HK\$|CN¥|[$€£¥￥]/i.test(line));
@@ -177,7 +197,7 @@
     if (personal === professional) return "";
     return personal ? "personal" : "professional";
   }
-  const api = {fabTier, parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, availabilityAt, zeroTotal, zeroFreeCheckout, queue};
+  const api = {fabTier, parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, availabilityAt, totalState, zeroTotal, zeroFreeCheckout, fabCheckoutTier, queue};
   if (typeof module !== 'undefined') module.exports = api;
   root.PocketDomain = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -102,7 +102,7 @@ function renderCard(item) {
   label.append(check);
   titleRow.append(label, element('h3', '', item.title));
   const meta = element('div', 'card-meta');
-  if (item.originalPrice) meta.append(element('del', '', item.originalPrice.replace(/^CN¥/, '¥')));
+  if (item.originalPrice) meta.append(element('del', '', String(item.originalPrice).replace(/^CN¥/, '¥')));
   let priceLabel = '限时免费';
   if (item.availability === 'upcoming') priceLabel = '即将限免 · 暂不可领取';
   if (item.availability === 'expired') priceLabel = '活动已结束';

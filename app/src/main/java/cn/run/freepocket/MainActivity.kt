@@ -218,10 +218,20 @@ class MainActivity : Activity() {
         }
         WebViewCompat.addWebMessageListener(catalogueView, "PocketApp", setOf(APP_ORIGIN)) { _, data, origin, main, _ ->
             if (!main || origin.toString() != APP_ORIGIN) return@addWebMessageListener
-            try {
-                handleCommand(parseWebMessage(data))
+            val command = try {
+                parseWebMessage(data)
             } catch (_: JSONException) {
-                fail("应用消息格式无效，请重新打开程序。")
+                Log.w("PocketBridge", "Ignored malformed catalogue message")
+                return@addWebMessageListener
+            }
+            try {
+                handleCommand(command)
+            } catch (rejected: ClaimJournal.Rejected) {
+                message = rejected.reason
+                publish()
+            } catch (_: JSONException) {
+                message = "应用命令无法处理，请刷新或检查领取记录。"
+                publish()
             }
         }
         root.addView(catalogueView, FrameLayout.LayoutParams(-1, -1))
@@ -361,10 +371,16 @@ class MainActivity : Activity() {
         WebViewCompat.addWebMessageListener(storeView, "PocketStore", STORE_ORIGINS) { _, data, origin, main, reply ->
             val currentTask = active
             if (currentTask == null || !STORE_ORIGINS.contains(origin.toString())) return@addWebMessageListener
-            try {
-                handleStoreMessage(parseWebMessage(data), origin.toString(), main, reply)
+            val payload = try {
+                parseWebMessage(data)
             } catch (_: JSONException) {
-                fail("商店返回格式无法识别，请重新刷新。")
+                Log.w("PocketBridge", "Ignored malformed store message")
+                return@addWebMessageListener
+            }
+            try {
+                handleStoreMessage(payload, origin.toString(), main, reply)
+            } catch (_: JSONException) {
+                fail("商店任务状态异常，已停止，请核实结果或刷新。")
             }
         }
         browser!!.addView(storeView, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -818,20 +834,25 @@ class MainActivity : Activity() {
     @Throws(JSONException::class)
     private fun handleStoreMessage(data: JSONObject, origin: String, main: Boolean, reply: JavaScriptReplyProxy) {
         if (!current(data.optString("nonce"))) return
-        val type = data.getString("type")
         val task = active!!
         val category = task.getString("category")
         val mode = task.getString("mode")
-        val productOrigin = if (category == "fab") "https://www.fab.com" else "https://store.epicgames.com"
+        if (!StoreMessagePolicy.accepts(category, mode, data, origin, main)) return
+        try {
+            StoreMessagePolicy.validate(category, data)
+        } catch (_: JSONException) {
+            // Never include payloads or parser exceptions: they may contain authorization data.
+            Log.w("PocketBridge", "Ignored incomplete store message")
+            return
+        }
+        val type = data.getString("type")
         if (type == "licenseInvalidated") {
-            if (!main || origin != "https://www.fab.com" || category != "fab" || mode != "claim") return
             task.remove("fabTierVerified")
             fail("商品页许可在领取过程中发生变化，已停止；请先核实订单结果。"); return
         }
         if (type == "actionReady") {
             if (mode != "claim" || !task.has("item") || journal?.running() != true) return
             val stage = data.getString("stage")
-            if (stage == "product" && (!main || origin != productOrigin)) return
             if (!bindBatchAccount(category)) return
             if (category == "fab") {
                 if (stage == "product") {
@@ -858,33 +879,27 @@ class MainActivity : Activity() {
                 .put("type", "actionPermit").put("nonce", task.getString("nonce")).put("stage", stage).toString())
             return
         }
-        if (type in listOf("catalogue", "result", "error", "ownership") && (!main || origin != productOrigin)) return
         if (type == "authorized") {
             val code = data.getString("code")
-            if (!main || origin != "https://www.epicgames.com" || mode != "auth"
-                || category == "fab" || !code.matches("[a-zA-Z0-9_-]{16,1024}".toRegex())) return
+            if (!code.matches("[a-zA-Z0-9_-]{16,1024}".toRegex())) return
             task.put("mode", "authorizing")
             verifyButton!!.isEnabled = false
             browserStatus!!.text = getString(R.string.authorizing)
             acceptAuthorization(code, task.getString("nonce"))
         } else if (type == "authenticated") {
-            if (!main || origin != "https://www.fab.com" || category != "fab" || mode != "auth") return
             fabAccount.put("connected", true).put("displayName", data.getString("displayName"))
             completed++; next()
         } else if (type == "ownership") {
-            if (category != "fab" || mode != "syncFab") return
             acceptFabOwnership(data)
             if (task.optBoolean("forClaim") && !bindBatchAccount(category)) return
             completed++; next()
         } else if (type == "catalogue") {
-            if (mode != "discover") return
             replaceCategory(category, data.getJSONArray("items"))
             updated.put(category, System.currentTimeMillis())
             finishCatalogue(task.getString("nonce"))
         } else if (type == "result") {
             if (mode !in listOf("claim", "check") || !task.has("item")) return
             val status = data.getString("status")
-            if (status !in listOf("owned", "unowned", "expired")) throw JSONException("未知拥有状态")
             val item = find(task.getJSONObject("item").getString("key"))
             if (item != null) item.put("status", status).put("checkedAt", System.currentTimeMillis()).put("cached", false)
                 .put("statusReason", if (category == "fab") "Fab 素材库已核实" else "官方商品页面已核实")
@@ -1236,8 +1251,7 @@ class MainActivity : Activity() {
         }
 
         private const val APP_ORIGIN = "https://appassets.androidplatform.net"
-        private val STORE_ORIGINS: Set<String> = setOf(
-            "https://store.epicgames.com", "https://www.epicgames.com", "https://www.fab.com")
+        private val STORE_ORIGINS: Set<String> = StoreMessagePolicy.origins
 
         @JvmStatic
         fun claimableNow(item: JSONObject, now: Long): Boolean {

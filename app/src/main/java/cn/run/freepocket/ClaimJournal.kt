@@ -52,10 +52,12 @@ internal class ClaimJournal @Throws(JSONException::class) constructor(json: Stri
         return result
     }
 
-    @Throws(JSONException::class)
+    class Rejected(val reason: String) : Exception(reason)
+
+    @Throws(Rejected::class, JSONException::class)
     fun resume(country: String) {
-        val current = current() ?: throw JSONException("没有可继续的领取记录")
-        if (country != current.getString("country")) throw JSONException("账号地区已变化，请开始新的领取任务")
+        val current = current() ?: throw Rejected("没有可继续的领取记录")
+        if (country != current.getString("country")) throw Rejected("账号地区已变化，请开始新的领取任务")
         current.put("state", "running")
     }
 

@@ -292,3 +292,25 @@ test('Fab native select reads only the selected option for the tier and free pri
  fabTier:'professional',selectedTier:'Professional',selectedPrice:'$99'});
  assert.equal(paid.cta.clicks,undefined);
 });
+
+
+test('Fab missing checkout license cannot rely on product approval alone', async () => {
+  const r = await run({mode:'claim',category:'fab',storeCheckout:true,checkoutTier:'',
+    urlOverride:'https://www.fab.com/payment/web/purchase',paymentText:'Total $0.00'});
+  assert.equal(r.submit.clicks, undefined);
+  assert.ok(r.messages.some(m => m.type==='waiting' && /许可/.test(m.message)));
+});
+test('Fab checkout without a selector accepts only an explicit matching summary', async () => {
+  for (const summary of ['License: Personal', 'License: Professional', 'Personal\nProfessional', 'Personal', 'License: Personal\nLicense: Personal']) {
+    const r = await run({mode:'claim',category:'fab',storeCheckout:true,checkoutTier:'',
+      urlOverride:'https://www.fab.com/payment/web/purchase',paymentText:summary+'\nTotal $0.00'});
+    assert.equal(r.submit.clicks, summary==='License: Personal' ? 1 : undefined);
+  }
+});
+test('checkout explains missing, ambiguous and unreadable totals without submitting', async () => {
+  for (const [text,reason] of [['Game','缺少'], ['Total $0.00\nTotal $1.00','多条'], ['Total Unavailable','金额']]) {
+    const r = await run({mode:'claim',paymentText:text});
+    assert.equal(r.submit.clicks, undefined);
+    assert.ok(r.messages.some(m => m.type==='waiting' && m.message.includes(reason)));
+  }
+});

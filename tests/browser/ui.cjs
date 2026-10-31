@@ -24,7 +24,7 @@ const server = http.createServer((request, response) => {
     const sample = {busy:false,country:'CN',updated:{pc:now,android:now,fab:now},message:'界面测试：示例数据',
       epicAccount:{connected:true,displayName:'示例账号'},fabAccount:{connected:true,displayName:'示例账号'},
       items:[{key:'pc-owned',category:'pc',title:'已拥有示例',status:'owned',localCover:'brand/game-night.webp'},
-        {key:'pc-free',category:'pc',title:'可领取示例',status:'unowned',localCover:'brand/game-night.webp'},
+        {key:'pc-free',category:'pc',title:'可领取示例',status:'unowned',originalPrice:40,localCover:'brand/game-night.webp'},
         {key:'pc-future',category:'pc',title:'预告示例',status:'unowned',availability:'upcoming',start:new Date(now+3600000).toISOString(),localCover:'brand/game-night.webp'},
         {key:'android-free',category:'android',title:'手机示例',status:'unowned',localCover:'brand/mobile-gift.webp'},
         {key:'fab-owned',category:'fab',title:'素材示例',status:'owned',localCover:'brand/fab-workshop.webp'}],
@@ -46,6 +46,18 @@ const server = http.createServer((request, response) => {
     assert.deepEqual(await page.evaluate(()=>[...selected]), ['pc-free']);
     await page.locator('#claim').click();
     assert.deepEqual(await page.evaluate(()=>commands.at(-1)), {action:'claim',category:'pc',keys:['pc-free']});
+    assert.equal(await page.locator('[data-key="pc-free"] del').innerText(), '40');
+    for (const change of ['owned','expired','removed']) {
+      await page.evaluate(value=>receiveState(value), sample);
+      await page.locator('#select-all').check();
+      await page.evaluate(({value,change}) => receiveState({...value,items:change==='removed'
+        ? value.items.filter(item=>item.key!=='pc-free')
+        : value.items.map(item=>item.key==='pc-free' ? {...item,status:change,
+            ...(change==='expired' ? {availability:'expired',end:new Date(Date.now()-1000).toISOString()} : {})} : item)}), {value:sample,change});
+      assert.equal(await page.evaluate(()=>selected.size),0);
+      assert.equal(await page.locator('#claim').isDisabled(),true);
+    }
+    await page.evaluate(value=>receiveState(value), sample);
     await page.locator('#resume-batch').click();
     assert.deepEqual(await page.evaluate(()=>commands.at(-1)), {action:'resumeBatch'});
     await page.locator('#show-history').click();

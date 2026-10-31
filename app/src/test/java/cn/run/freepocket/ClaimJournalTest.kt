@@ -15,6 +15,16 @@ class ClaimJournalTest {
         JSONObject().put("key", key).put("category", category).put("title", key)
             .put("status", status).put("start", NOW - 1000).put("end", "2099-01-01T00:00:00Z")
 
+    @Test fun resumeBusinessRefusalIsDistinctFromCorruptJson() {
+        val empty = assertThrows(ClaimJournal.Rejected::class.java) { ClaimJournal("{}").resume("CN") }
+        assertEquals("没有可继续的领取记录", empty.reason)
+        val journal = ready()
+        val previous = journal.serialize()
+        val changed = assertThrows(ClaimJournal.Rejected::class.java) { journal.resume("HK") }
+        assertEquals("账号地区已变化，请开始新的领取任务", changed.reason)
+        assertEquals(previous, journal.serialize())
+    }
+
     private fun ready(): ClaimJournal {
         val journal = ClaimJournal("{}")
         journal.start("CN", listOf("pc"), null)
@@ -97,7 +107,7 @@ class ClaimJournalTest {
         journal.pause("中断")
         assertThrows(JSONException::class.java) { journal.bind("pc", "account-b", "另一个账号") }
         assertThrows(JSONException::class.java) { journal.bind("pc", "", "登录已失效") }
-        assertThrows(JSONException::class.java) { journal.resume("HK") }
+        assertThrows(ClaimJournal.Rejected::class.java) { journal.resume("HK") }
         journal.start("CN", listOf("pc"), null)
         journal.bind("pc", "account-b", "另一个账号")
         journal.plan("pc", JSONArray().put(item("pc-a", "pc", "unowned")), NOW)

@@ -2,6 +2,14 @@
 
 2026-10-17 建立本地 Git 仓库。旧版 v0.1.0、v0.2.0、v0.3.0 由原有完整源码 ZIP 逐版导入，每个标签的源码文件内容已与对应 ZIP 逐个比对。原版本没有 Git 提交记录，补录提交的日期代表导入日期。
 
+## 1.0.1 测试候选 — 审核意见修复
+
+2026-10-31。保留工作区的 Gradle 9.8.2 升级并恢复官方发行包 SHA256、超时和 URL 验证；修复 Qodana Android 镜像占位符，收紧仓库内容权限。UI 兼容数字原价，浏览器回归覆盖状态更新后的选择清理。结算金额区分缺失、多条和无法识别，已知商品标题不再干扰合计，但真实金额行和纯 Total 标签仍保留；中文免费卡片继续要求唯一零元货币金额。Fab 结算需要明确且唯一的匹配许可，不接受裸档位商品标题。
+
+商店消息增加按任务、来源及主/子帧的可单测规则，保留官方支付子帧；缺字段消息不写失败账本，任务恢复的业务拒绝显示具体原因。正式版设备脚本需要的 Kotlin 运行入口采用窄保留规则，未关闭 R8，相关规则使签名 APK 增加约 3.2 KiB。未拆分完整队列引擎，未新增生产依赖。
+
+验证：Gradle 9.8.2 下 52 项 JVM、87 项 JavaScript、320/360/390/480 四宽度浏览器检查、正式构建通过；Lint 0 错误、10 警告，未禁用规则。独立审核两轮，有效意见补回归后解决。隔离模拟器覆盖安装了使用测试签名的同一 R8 非调试构建，networkErrorInspect 通过；正式分发 APK 仍使用原发布签名。最终 APK 348,845 字节。此故障注入只验证启动、测试脚本和原生错误提示，不代表真实网络、账号领取或官网新布局通过；本轮未提交真实订单，未运行 GitHub CI/Qodana 云扫描或发布新版本。
+
 ## 1.0.1 测试候选 — 原生代码全部迁移为 Kotlin
 
 2026-10-31。将 app 模块剩余 Java 源码全部转换为等价 Kotlin：`MainActivity`、`ClaimJournal`、`EpicSession`、`OfficialImages`，以及全部 JVM 单元测试和设备验证脚本（`ReleaseVerification`、`CheckpointBridgeFixture`）。`tests/java` 的独立拥有凭证分页检查迁入 Gradle 单元测试（`EpicEntitlementsTest.kt`，8 项），`tests/run-tests.ps1` 只保留 JavaScript 检查。AGP 9 内置 Kotlin 编译，`build.gradle` 未新增插件、依赖或 keep 规则；类名、包名、页面脚本（domain.js/automation.js/ui.js）与领取、许可、账号语义保持不变。仅两处有意的健壮性调整：Epic 会话初始化失败后的重试捕获从四种异常联合放宽为 `Exception`（AndroidKeyStore 的 `ProviderException` 是 RuntimeException，原联合捕获接不住）；账号清理窗口期对已销毁 WebView 的调用改为空安全（原代码在该窗口会崩溃）。

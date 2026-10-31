@@ -216,20 +216,26 @@ function runPocketTask(task) {
     if (ordered) return;
     if (task.category === 'fab') {
       const orderLicense = scope.querySelector('#license-select');
-      const orderTier = orderLicense ? D.fabTier(licenseText(orderLicense)) : '';
-      if (!task.fabTier || !task.fabTierVerified || (orderLicense && orderTier !== task.fabTier)) {
-        notice('尚未取得本次商品页许可的原生确认，或结算档位不一致；已暂停自动提交');
+      const orderTier = orderLicense ? D.fabTier(licenseText(orderLicense)) : D.fabCheckoutTier(scope.innerText);
+      if (!task.fabTier || !task.fabTierVerified || orderTier !== task.fabTier) {
+        notice('商品页许可尚未确认，或结算许可缺失、不明确、与所选档位不一致；已暂停自动提交');
         return;
       }
     }
     const submit = buttons(scope).find(b => /^(place order|add to library|下单|下订单|加入库|添加到库)$/i.test(label(b)));
     if (!submit || submit.disabled) return;
-    let free = D.zeroTotal(scope.innerText);
+    const totalState = D.totalState(scope.innerText, task.item.title);
+    let free = null;
+    if (totalState === 'zero') free = true;
+    else if (totalState === 'nonzero') free = false;
     if (free === null && (inStoreCheckout || inFabCheckout) && /^(add to library|加入库|添加到库)$/i.test(label(submit)))
       free = D.zeroFreeCheckout(scope.innerText);
     if (free !== true) {
       if (free === false) finish('blocked', {message: '订单合计不为零，已停止自动下单'});
-      else notice('未能读取明确的零元合计。请查看订单，必要时手动领取，再点“核实结果”');
+      else {
+        const reason = {missing:'结算页缺少可确认的合计', ambiguous:'结算页出现多条合计，无法确认订单金额', unreadable:'结算合计金额无法识别'}[totalState];
+        notice(reason + '；已暂停。请查看订单，必要时手动领取，再点“核实结果”');
+      }
       return;
     }
     // Consent, age, and marketing choices belong to the user; never tick them automatically.

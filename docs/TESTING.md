@@ -2,7 +2,7 @@
 
 ## 常规检查
 
-需要 JDK 17+ 和 Android SDK 35。`tests/run-tests.ps1` 执行 JavaScript 与独立分页检查；Gradle 默认的单元测试变体为 Release。
+需要 JDK 17+ 和 Android SDK 35。`tests/run-tests.ps1` 执行 JavaScript 检查，拥有凭证分页检查在 Gradle 单元测试中；Gradle 默认的单元测试变体为 Release。
 
 ```powershell
 ./tests/run-tests.ps1
@@ -13,7 +13,7 @@
 
 ```powershell
 npm install --no-save --package-lock=false playwright@1.62.1
-node tests/browser/ui.cjs
+./tests/run-tests.ps1 -Browser
 ```
 
 ## 正式签名
@@ -74,3 +74,19 @@ adb shell am instrument -w -e mode fixture cn.run.freepocket.test/cn.run.freepoc
 ## 1.0.0 的实际边界
 
 正式包在独立 MuMu Android 12 / WebView 110 上，完成真实库存、全部已拥有跳过、进程中断恢复、完整模拟器关机重启与竖屏图片检查。原生许可桥接在诊断构建的本机页面验证。账号当时已拥有全部本期内容，没有新的真实订单；当前用户手机未连接测试。参照历史 0.3.2 新订单记录不能替代本版的新订单实测。
+
+## Fab 账号标识与凭据
+
+Epic 的 OAuth 令牌经 Android KeyStore 的 AES/GCM 密钥加密保存。Fab 的登录凭据是 WebView 管理的 Cookie，不是 `accountId`；Cookie 保存在应用私有 WebView 数据中，不能据此宣称 Cookie 也经过 KeyStore 加密。
+
+Fab 的 `accountId`、显示名和同步时间作为库存及领取记录的绑定元数据存于应用私有 preferences。账号标识本身不能登录或领取，拥有状态查询仍需要有效 Cookie；它仍属于账号信息，不应写入公开日志或上传报告。发送到前端的 Fab 状态会删除内部 `accountId`。
+
+## 1.0.1 审核修复回归
+
+浏览器测试覆盖 320/360/390/480 宽度、数字价格和状态更新时清除已拥有/过期/已移除选择。`-Browser` 显式启用该测试，缺少 Playwright 或浏览器会报错，不会把跳过当作通过。
+
+Fab 结算必须具有本次商品页许可确认，还须从结算许可控件或明确且唯一的许可摘要中核对同一档位。无法确认时暂停，不凭商品介绍中的 Personal/Professional 字样推断。英文免费卡片及已支持的中文文案均须有唯一且明确的零元货币金额；未支持的布局仍暂停，未据此宣称所有语言和官网改版兼容。
+
+商店消息按任务类型、来源和主/子帧身份核对，Epic 的官方支付子帧仍受支持。格式错误消息不写失败账本；任务恢复的地区不匹配或无历史任务显示具体拒绝原因。内部账本错误仍停止处理。消息日志不记录 JSON、授权码或解析器异常内容。
+
+正式版设备脚本与主 APK 分开压缩；测试代码需要的 Kotlin 运行方法不能因主应用没有直接调用而被裁掉。`app/proguard-device-tests.pro` 只保留现有脚本实际调用的运行入口，未关闭 R8 或保留整个 Kotlin 库。修改设备测试中的 Kotlin 调用后应重新运行压缩正式包的设备测试，并关注 APK 体积。

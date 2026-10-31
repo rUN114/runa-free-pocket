@@ -33,7 +33,7 @@ android {
             minifyEnabled true
             shrinkResources true
             // WebKit supplies its Chromium boundary-interface keep rules in the AAR.
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-device-tests.pro'
         }
         compact {
             initWith release
