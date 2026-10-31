@@ -27,6 +27,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.ScriptHandler
+import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
@@ -87,9 +88,9 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
             || !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            AlertDialog.Builder(this).setTitle("请先更新 Android System WebView")
-                .setMessage("请在手机应用商店更新 Android System WebView 或 Chrome 后重试。")
-                .setPositiveButton("关闭") { _, _ -> finish() }.setCancelable(false).show()
+            AlertDialog.Builder(this).setTitle(R.string.webview_update_title)
+                .setMessage(R.string.webview_update_message)
+                .setPositiveButton(R.string.close) { _, _ -> finish() }.setCancelable(false).show()
             return
         }
         try {
@@ -102,7 +103,7 @@ class MainActivity : Activity() {
         initializeSession()
         try {
             journal = ClaimJournal(getSharedPreferences("claim-journal", MODE_PRIVATE).getString("data", "{}")!!)
-        } catch (error: JSONException) {
+        } catch (_: JSONException) {
             journalError = "领取记录无法读取，为防止重复订单已停用自动领取，请保留应用数据并检查记录。"
         }
         images = OfficialImages(File(cacheDir, "official-images"))
@@ -113,7 +114,7 @@ class MainActivity : Activity() {
     private fun initializeSession() {
         try {
             epic = EpicSession(this)
-        } catch (error: Exception) {
+        } catch (_: Exception) {
             // A broken derived session can be replaced by a fresh official authorization, never plaintext storage.
             getSharedPreferences("epic-auth", MODE_PRIVATE).edit().remove("encrypted").apply()
             message = "本机授权记录无法读取，请重新连接 Epic 账号。"
@@ -149,7 +150,7 @@ class MainActivity : Activity() {
             items = JSONArray(preferences.getString("items", "[]")!!)
             updated = JSONObject(preferences.getString("updated", "{}")!!)
             for (i in 0 until items.length()) items.getJSONObject(i).put("status", "unknown")
-        } catch (error: JSONException) {
+        } catch (_: JSONException) {
             items = JSONArray()
             updated = JSONObject()
             message = "活动缓存无法读取，请重新刷新。"
@@ -210,7 +211,7 @@ class MainActivity : Activity() {
                     tasks.add(task("discover", "pc"))
                     if (epic.connected()) tasks.add(task("syncEpic", "pc"))
                     beginQueue()
-                } catch (error: JSONException) {
+                } catch (_: JSONException) {
                     fail("无法启动活动读取，请点击刷新重试。")
                 }
             }
@@ -218,8 +219,8 @@ class MainActivity : Activity() {
         WebViewCompat.addWebMessageListener(catalogueView, "PocketApp", setOf(APP_ORIGIN)) { _, data, origin, main, _ ->
             if (!main || origin.toString() != APP_ORIGIN) return@addWebMessageListener
             try {
-                handleCommand(JSONObject(data.data))
-            } catch (error: JSONException) {
+                handleCommand(parseWebMessage(data))
+            } catch (_: JSONException) {
                 fail("应用消息格式无效，请重新打开程序。")
             }
         }
@@ -241,15 +242,15 @@ class MainActivity : Activity() {
         addressView.setPadding(dp(14), 0, dp(14), dp(5))
         browserPanel.addView(addressView)
         val controls = LinearLayout(this)
-        addButton(controls, "返回列表") { stop() }
-        verifyButton = addButton(controls, "核实结果") { verifyCurrent() }
-        addButton(controls, "跳过此项") { skip() }
+        addButton(controls, getString(R.string.back_to_list)) { stop() }
+        verifyButton = addButton(controls, getString(R.string.verify_result)) { verifyCurrent() }
+        addButton(controls, getString(R.string.skip_item)) { skip() }
         browserPanel.addView(controls)
-        addButton(controls, "网络诊断") {
-            val probe = AlertDialog.Builder(this).setTitle("连接诊断")
-                .setMessage("正在检查 Fab、Epic 登录和结算域名…").setPositiveButton("关闭", null).show()
+        addButton(controls, getString(R.string.network_diagnostics)) {
+            val probe = AlertDialog.Builder(this).setTitle(R.string.diagnostics_title)
+                .setMessage(R.string.diagnostics_loading).setPositiveButton(R.string.close, null).show()
             network.execute {
-                val summary = StringBuilder("只检查系统 HTTPS 连接，不发送账号 Cookie；不代表 WebView 登录或领取成功。\n")
+                val summary = StringBuilder(getString(R.string.diagnostics_intro))
                 for (endpoint in listOf("https://www.fab.com/login", "https://www.epicgames.com/id/login", "https://www.epicgames.com/payment/")) {
                     var connection: java.net.HttpURLConnection? = null
                     val host = java.net.URI.create(endpoint).host
@@ -266,7 +267,7 @@ class MainActivity : Activity() {
                         connection?.disconnect()
                     }
                 }
-                summary.append("\n\nHTTP 响应表示到达了服务器；403/429仍可能受到限制。可切换网络后对照检查。")
+                summary.append(getString(R.string.diagnostics_footer))
                 handler.post { if (!isDestroyed && probe.isShowing) probe.setMessage(summary.toString()) }
             }
         }
@@ -291,7 +292,7 @@ class MainActivity : Activity() {
                 val navigation = ++storeNavigation
                 handler.postDelayed({
                     if (navigation != storeNavigation || (store?.progress ?: 100) >= 100 || browser?.visibility != View.VISIBLE) return@postDelayed
-                    browserStatus!!.text = "官方页面加载超过45秒。可重试连接，或切换网络后重试。\n如已提交订单，请先核实结果，不要重复下单。"
+                    browserStatus!!.text = getString(R.string.page_load_slow)
                 }, 45000)
                 val uri = Uri.parse(url)
                 val currentTask = active
@@ -310,7 +311,7 @@ class MainActivity : Activity() {
                 try {
                     invalidateOwnership(items, "epic")
                     publish()
-                } catch (error: JSONException) {
+                } catch (_: JSONException) {
                     fail("拥有状态无法重置，请重新刷新。")
                 }
                 if (currentTask != null) fail("Epic 网页登录已过期，请重新连接账号后继续领取。")
@@ -321,28 +322,26 @@ class MainActivity : Activity() {
             }
 
             override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
-                if (request.isForMainFrame) browserStatus!!.text = "官方页面返回 HTTP " + response.statusCode + " · " + request.url.host +
-                    "\n403可能为访问限制，429为请求过多，5xx为服务端异常；尚未确认根因。"
+                if (request.isForMainFrame) browserStatus!!.text = getString(R.string.http_page_error, response.statusCode.toString(), request.url.host)
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (!request.isForMainFrame) return
                 val currentTask = active
-                var phase = "浏览官方页面"
+                var phase = getString(R.string.phase_browse)
                 if (currentTask != null) {
                     phase = when (currentTask.optString("mode")) {
-                        "auth" -> "官方登录"
-                        "discover" -> "读取活动"
-                        "syncFab" -> "同步素材库"
-                        "claim" -> "领取与结算"
-                        else -> "核实拥有状态"
+                        "auth" -> getString(R.string.phase_login)
+                        "discover" -> getString(R.string.phase_discover)
+                        "syncFab" -> getString(R.string.phase_library)
+                        "claim" -> getString(R.string.phase_checkout)
+                        else -> getString(R.string.phase_ownership)
                     }
                 }
                 val detail = error.description.toString()
                 val codeMatch = Pattern.compile("net::ERR_[A-Z_]+").matcher(detail)
                 val code = if (codeMatch.find()) codeMatch.group() else "WebView " + error.errorCode
-                browserStatus!!.text = "页面加载失败 · " + phase + "\n" + request.url.host + " · " + code +
-                    "\n原因尚未确定，可切换网络后点重试；如已提交订单，请先核实结果。"
+                browserStatus!!.text = getString(R.string.page_load_error, phase, request.url.host, code)
                 storeNavigation++
                 if (currentTask != null && currentTask.optString("mode") in listOf("auth", "discover", "syncFab")
                     && error.errorCode in listOf(WebViewClient.ERROR_CONNECT, WebViewClient.ERROR_TIMEOUT)
@@ -350,11 +349,11 @@ class MainActivity : Activity() {
                     val retryTask = currentTask
                     try {
                         retryTask.put("readRetry", 1)
-                    } catch (invalid: JSONException) {
+                    } catch (_: JSONException) {
                         fail("无法记录页面重试状态，请返回列表重试。")
                         return
                     }
-                    browserStatus!!.append("\n将在1.5秒后重试一次；不会重试订单提交。")
+                    browserStatus!!.append(getString(R.string.read_retry_once))
                     handler.postDelayed({ if (active === retryTask) verifyCurrent() }, 1500)
                 }
             }
@@ -363,8 +362,8 @@ class MainActivity : Activity() {
             val currentTask = active
             if (currentTask == null || !STORE_ORIGINS.contains(origin.toString())) return@addWebMessageListener
             try {
-                handleStoreMessage(JSONObject(data.data), origin.toString(), main, reply)
-            } catch (error: JSONException) {
+                handleStoreMessage(parseWebMessage(data), origin.toString(), main, reply)
+            } catch (_: JSONException) {
                 fail("商店返回格式无法识别，请重新刷新。")
             }
         }
@@ -433,8 +432,8 @@ class MainActivity : Activity() {
             val item = find(command.getString("key")) ?: return
             manualCategory = item.getString("category")
             verifyButton!!.isEnabled = true
-            verifyButton!!.text = "同步结果"
-            browserStatus!!.text = "官方商品页。返回列表后会自动同步当前分类的拥有状态。"
+            verifyButton!!.text = getString(R.string.sync_result)
+            browserStatus!!.text = getString(R.string.official_product_note)
             openBrowser(item.getString("url"))
             return
         }
@@ -512,7 +511,7 @@ class MainActivity : Activity() {
             journal.bind(category, if (category == "fab") fabAccount.getString("accountId") else epic.accountId(),
                 if (category == "fab") fabAccount.getString("displayName") else epic.displayName())
             true
-        } catch (error: JSONException) {
+        } catch (_: JSONException) {
             fail("当前账号未连接或与原领取记录不一致，请重新连接原账号，或开始新任务。")
             false
         }
@@ -605,7 +604,7 @@ class MainActivity : Activity() {
                 completed++
                 active = tasks.poll()
             }
-        } catch (error: JSONException) {
+        } catch (_: JSONException) {
             fail("领取队列无法读取，请重新选择。")
             return
         }
@@ -618,7 +617,7 @@ class MainActivity : Activity() {
                     if (!saveJournal()) return
                     completionNote = "本次领取处理已结束，请查看领取记录；待核实项目不会重复自动下单。"
                 }
-            } catch (error: JSONException) {
+            } catch (_: JSONException) {
                 message = "领取结果记录异常，请同步库存核实。"; publish(); return
             }
             message = if (completionNote.isEmpty()) "活动已更新。连接账号后，拥有状态会自动同步。" else completionNote
@@ -643,7 +642,7 @@ class MainActivity : Activity() {
                 if (category == "fab") task.put("accountId", fabAccount.getString("accountId"))
             }
             verifyButton!!.isEnabled = true
-            verifyButton!!.text = if (mode == "auth") "重试连接" else "重试读取"
+            verifyButton!!.text = if (mode == "auth") getString(R.string.retry_login) else getString(R.string.retry_read)
             if (mode == "syncEpic" || mode == "verifyEpic") {
                 browser?.visibility = View.GONE
                 store?.loadUrl("about:blank")
@@ -667,22 +666,22 @@ class MainActivity : Activity() {
             }
             script = WebViewCompat.addDocumentStartJavaScript(store!!, scriptSource + "\nrunPocketTask(" + task + ");", STORE_ORIGINS)
             var url = if (category == "fab") "https://www.fab.com/limited-time-free?lang=en" else "https://store.epicgames.com/en-US/free-games"
-            var title = "读取活动"
+            var title = getString(R.string.phase_discover)
             if (mode == "auth") {
                 url = if (category == "fab") "https://www.fab.com/login" else EpicSession.authorizationUrl()
-                title = "完成官方登录后，将自动返回并同步拥有状态"
-            } else if (mode == "syncFab") title = "同步 Fab 素材库"
+                title = getString(R.string.login_task_title)
+            } else if (mode == "syncFab") title = getString(R.string.fab_library_task_title)
             if (task.has("item")) {
-                verifyButton!!.text = "核实结果"
+                verifyButton!!.text = getString(R.string.verify_result)
                 url = task.getJSONObject("item").getString("url")
                 title = task.getJSONObject("item").getString("title")
             }
-            browserStatus!!.text = (completed + 1).toString() + "/" + total + "  " + title + "\n验证码和许可协议请在下方官方页面处理。"
+            browserStatus!!.text = getString(R.string.task_status, (completed + 1).toString(), total.toString(), title)
             message = "正在处理：$title"
             openBrowser(url)
             if (mode == "discover" || mode == "syncFab") scheduleReadTimeout(nonce)
             publish()
-        } catch (error: JSONException) {
+        } catch (_: JSONException) {
             fail("任务数据无效，请重新刷新。")
         }
     }
@@ -723,7 +722,7 @@ class MainActivity : Activity() {
                         finishCatalogue(nonce)
                     }
                 }
-            } catch (error: IOException) {
+            } catch (_: IOException) {
                 runOnUiThread { if (current(nonce)) fail("电脑活动读取失败，请检查网络后重试。") }
             }
         }
@@ -747,15 +746,15 @@ class MainActivity : Activity() {
                     if (!current(nonce)) return@runOnUiThread
                     try {
                         epic.save(session); epicSyncError = ""; completed++; next()
-                    } catch (error: GeneralSecurityException) {
+                    } catch (_: GeneralSecurityException) {
                         fail("无法安全保存授权，请重新连接账号。")
-                    } catch (error: IOException) {
+                    } catch (_: IOException) {
                         fail("无法安全保存授权，请重新连接账号。")
                     }
                 }
             } catch (error: IOException) {
                 runOnUiThread { if (current(nonce)) fail("账号授权请求失败：" + error.message) }
-            } catch (error: JSONException) {
+            } catch (_: JSONException) {
                 runOnUiThread { if (current(nonce)) fail("未取得有效的库存授权，请重新连接 Epic 账号。") }
             }
         }
@@ -802,9 +801,9 @@ class MainActivity : Activity() {
                             }
                             completed++; next()
                         }
-                    } catch (error: GeneralSecurityException) {
+                    } catch (_: GeneralSecurityException) {
                         fail("无法安全保存账号会话，请重新连接 Epic。")
-                    } catch (error: IOException) {
+                    } catch (_: IOException) {
                         fail("无法安全保存账号会话，请重新连接 Epic。")
                     }
                 }
@@ -847,7 +846,7 @@ class MainActivity : Activity() {
             }
             try {
                 journal!!.reserve(task.getJSONObject("item").getString("key"), stage)
-            } catch (error: JSONException) {
+            } catch (_: JSONException) {
                 fail("此项目存在待核实操作或重复请求，请先在领取记录中核实。"); return
             }
             if (!saveJournal()) return
@@ -866,7 +865,7 @@ class MainActivity : Activity() {
                 || category == "fab" || !code.matches("[a-zA-Z0-9_-]{16,1024}".toRegex())) return
             task.put("mode", "authorizing")
             verifyButton!!.isEnabled = false
-            browserStatus!!.text = "正在完成账号授权并读取库存…"
+            browserStatus!!.text = getString(R.string.authorizing)
             acceptAuthorization(code, task.getString("nonce"))
         } else if (type == "authenticated") {
             if (!main || origin != "https://www.fab.com" || category != "fab" || mode != "auth") return
@@ -896,10 +895,10 @@ class MainActivity : Activity() {
         } else if (type == "ordered") {
             if (mode == "claim" && !waitingToVerify) {
                 waitingToVerify = true
-                browserStatus!!.text = "已提交零元订单，等待官方结果。若有验证码请完成，完成后可点“核实结果”。"
+                browserStatus!!.text = getString(R.string.order_submitted)
             }
         } else if (type == "waiting") {
-            browserStatus!!.text = data.getString("message") + "\n当前 " + (completed + 1) + "/" + total
+            browserStatus!!.text = getString(R.string.task_progress, data.getString("message"), (completed + 1).toString(), total.toString())
         } else if (type == "blocked") {
             if (mode == "claim") fail(data.getString("message"))
         } else if (type == "error") {
@@ -907,10 +906,10 @@ class MainActivity : Activity() {
                 cancelReadTimeout()
                 if (mode == "syncFab") markSyncError(data.getString("message"))
                 else completionNote = "活动读取失败：" + data.getString("message")
-                browserStatus!!.text = data.getString("message") + "。请完成网页登录或验证，再点“重试读取”。也可以返回列表稍后重试。"
+                browserStatus!!.text = getString(R.string.read_failure_help, data.getString("message"))
                 publish(); return
             }
-            browserStatus!!.text = data.getString("message") + "。处理网页后点“核实结果”，或跳过此项。"
+            browserStatus!!.text = getString(R.string.item_failure_help, data.getString("message"))
             if (task.has("item")) task.getJSONObject("item").put("status", "error").put("statusReason", data.getString("message"))
             publish()
         }
@@ -950,7 +949,7 @@ class MainActivity : Activity() {
             markSyncError(reason)
             if (active!!.optBoolean("forClaim") || active!!.optString("mode") == "verifyEpic") { fail(completionNote); return }
             completed++; next()
-        } catch (error: JSONException) {
+        } catch (_: JSONException) {
             fail("同步结果无法更新，请重新刷新。")
         }
     }
@@ -993,7 +992,7 @@ class MainActivity : Activity() {
     private fun scheduleReadTimeout(nonce: String) {
         readTimeout = Runnable {
             if (!current(nonce)) return@Runnable
-            browserStatus!!.text = "网页读取超时。请检查网络，完成官网验证后点“重试读取”；也可以返回列表稍后重试。"
+            browserStatus!!.text = getString(R.string.read_timeout)
         }
         handler.postDelayed(readTimeout!!, 40000)
     }
@@ -1018,7 +1017,7 @@ class MainActivity : Activity() {
             task.put("mode", if (pageOnly) "check" else "verifyEpic")
             waitingToVerify = false
             startActive()
-        } catch (error: JSONException) {
+        } catch (_: JSONException) {
             fail("无法核实当前商品，请重新同步。")
         }
     }
@@ -1032,7 +1031,7 @@ class MainActivity : Activity() {
                 journal.result(task.getJSONObject("item").getString("key"), "error", "用户跳过，可在记录中重试未提交项目")
                 if (!saveJournal()) return
             }
-        } catch (error: JSONException) {
+        } catch (_: JSONException) {
             fail("无法记录跳过结果，请同步库存。"); return
         }
         completed++
@@ -1054,7 +1053,7 @@ class MainActivity : Activity() {
                 if (!saveJournal()) return
                 completionNote = reason
                 completed++; next(); return
-            } catch (error: JSONException) {
+            } catch (_: JSONException) {
                 message = "领取记录无法更新，已停止。请同步库存核实结果。"
             }
         }
@@ -1070,7 +1069,7 @@ class MainActivity : Activity() {
         if (journal != null && journal.running()) {
             try {
                 journal.pause("已暂停；继续前会重新查库，待核实订单不会自动重下单")
-            } catch (error: JSONException) {
+            } catch (_: JSONException) {
                 journalError = "领取记录无法暂停，请同步库存核实。"
             }
             if (!saveJournal()) return
@@ -1094,7 +1093,7 @@ class MainActivity : Activity() {
                 tasks.add(task("syncEpic", returnCategory))
             }
             beginQueue()
-        } catch (error: JSONException) {
+        } catch (_: JSONException) {
             message = "自动同步未启动，请点击同步按钮。"; publish()
         }
     }
@@ -1155,7 +1154,7 @@ class MainActivity : Activity() {
                 tasks.add(task("discover", category))
                 tasks.add(task(if (category == "fab") "syncFab" else "syncEpic", category))
                 beginQueue()
-            } catch (error: JSONException) {
+            } catch (_: JSONException) {
                 fail("已退出旧账号，请重新点击连接账号。")
             }
         }
@@ -1229,6 +1228,13 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        @Throws(JSONException::class)
+        internal fun parseWebMessage(message: WebMessageCompat): JSONObject {
+            if (message.type != WebMessageCompat.TYPE_STRING) throw JSONException("网页消息必须是文本")
+            val text = message.data ?: throw JSONException("网页消息缺少文本")
+            return JSONObject(text)
+        }
+
         private const val APP_ORIGIN = "https://appassets.androidplatform.net"
         private val STORE_ORIGINS: Set<String> = setOf(
             "https://store.epicgames.com", "https://www.epicgames.com", "https://www.fab.com")
@@ -1246,7 +1252,7 @@ class MainActivity : Activity() {
                 }
                 val end = item.optString("end")
                 end.isEmpty() || java.time.Instant.parse(end).toEpochMilli() > now
-            } catch (error: java.time.format.DateTimeParseException) {
+            } catch (_: java.time.format.DateTimeParseException) {
                 false
             }
         }
