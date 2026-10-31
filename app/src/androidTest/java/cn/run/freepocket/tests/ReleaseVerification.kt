@@ -43,12 +43,21 @@ class ReleaseVerification : Instrumentation() {
             output = File(getTargetContext().getExternalFilesDir(null), "verification")
             if (!output.isDirectory && !output.mkdirs()) throw IllegalStateException("Cannot create test output")
             val mode = arguments.getString("mode", "inspect")
-            if (mode !in listOf("inspect", "batch", "resume", "interrupt", "fixture", "fabCheckoutInspect", "networkErrorInspect"))
+            if (mode !in listOf("inspect", "savedStateSnapshot", "windowFixture", "batch", "resume", "interrupt", "fixture", "fabCheckoutInspect", "networkErrorInspect"))
                 throw IllegalStateException("Unknown verification mode")
             if (mode == "fixture" && getTargetContext().applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0)
                 throw IllegalStateException("Fixture mode requires the separate diagnostic build")
             if (mode != "fixture" && getTargetContext().applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
                 throw IllegalStateException("Target is debuggable; this test requires the actual release")
+            if (mode == "savedStateSnapshot") {
+                val journal = getTargetContext().getSharedPreferences("claim-journal", 0).getString("data", "{}")!!
+                val items = getTargetContext().getSharedPreferences("catalogue", 0).getString("items", "[]")!!
+                write("saved-state-snapshot.json", JSONObject().put("snapshotOnly", true)
+                    .put("capturedAt", System.currentTimeMillis()).put("journal", JSONObject(journal))
+                    .put("items", JSONArray(items)).toString(2))
+                result.putString("verification", "saved state captured; no new sync, activity launch or claiming requested")
+                finish(Activity.RESULT_OK, result); return
+            }
             restoreAuthorizedCookies()
             activity = startActivitySync(
                 Intent(Intent.ACTION_MAIN).setComponent(ComponentName("cn.run.freepocket", "cn.run.freepocket.MainActivity"))
@@ -60,6 +69,25 @@ class ReleaseVerification : Instrumentation() {
                 runOnMainSync { catalogue = findCatalogue(activity.window.decorView) }
                 catalogue != null && "true" == js(catalogue!!, "typeof window.receiveState==='function'&&!state.busy")
             }, 100000, "Initial catalogue did not become ready")
+            if (mode == "windowFixture") {
+                var testView: WebView? = null
+                runOnMainSync {
+                    testView = findStore(activity.window.decorView)!!
+                    (testView!!.parent as View).visibility = View.VISIBLE
+                    testView!!.webViewClient = object : android.webkit.WebViewClient() {
+                        override fun shouldInterceptRequest(view: WebView, request: android.webkit.WebResourceRequest): android.webkit.WebResourceResponse {
+                            val html = if (request.url.path == "/checkout") "<html><body>Local window fixture complete</body></html>"
+                                else "<html><body>Local window fixture<script>setTimeout(()=>window.open('https://store.epicgames.com/checkout'),200)</script></body></html>"
+                            return android.webkit.WebResourceResponse("text/html", "UTF-8", java.io.ByteArrayInputStream(html.toByteArray(StandardCharsets.UTF_8)))
+                        }
+                    }
+                    testView!!.loadUrl("https://store.epicgames.com/p/local-window-fixture")
+                }
+                waitFor({ "true" == js(testView!!, "location.pathname==='/checkout'") }, 10000,
+                    "Store WebView blocked the local scripted window")
+                result.putString("verification", "passed; local window requests intercepted; no orders")
+                finish(Activity.RESULT_OK, result); return
+            }
             if (mode == "networkErrorInspect") {
                 runOnMainSync {
                     val store = findStore(activity.window.decorView)!!

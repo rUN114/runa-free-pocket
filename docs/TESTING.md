@@ -71,6 +71,20 @@ adb shell am instrument -w -e mode fixture cn.run.freepocket.test/cn.run.freepoc
 
 正式签名与诊断签名不同，在独立设备上分别测试，不互相覆盖。运行时及构建证据应分别记录版本、APK 哈希、签名和测试范围。
 
+`windowFixture` 使用目标应用的商店 WebView，并拦截本机窗口测试的全部页面请求，验证没有触摸手势时能否打开窗口。应用启动仍可能读取官方目录或库存；夹具不请求真实订单。
+
+```powershell
+adb shell am instrument -w -e mode windowFixture cn.run.freepocket.test/cn.run.freepocket.tests.ReleaseVerification
+```
+
+`savedStateSnapshot` 只导出已保存的目录与账本，不启动界面、恢复 Cookie、同步库存或领取。输出含账号标识，只保存在本机私密测试目录，不直接上传。快照抓取时间不能代替条目的实际同步时间。
+
+```powershell
+adb shell am instrument -w -e mode savedStateSnapshot cn.run.freepocket.test/cn.run.freepocket.tests.ReleaseVerification
+```
+
+2026-10-31 的真实新订单、已拥有跳过及未验证部分见 [真实账号验证记录](LIVE-VERIFY-2026-10-31.md)。
+
 ## 1.0.0 的实际边界
 
 正式包在独立 MuMu Android 12 / WebView 110 上，完成真实库存、全部已拥有跳过、进程中断恢复、完整模拟器关机重启与竖屏图片检查。原生许可桥接在诊断构建的本机页面验证。账号当时已拥有全部本期内容，没有新的真实订单；当前用户手机未连接测试。参照历史 0.3.2 新订单记录不能替代本版的新订单实测。

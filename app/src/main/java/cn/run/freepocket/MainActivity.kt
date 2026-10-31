@@ -291,6 +291,8 @@ class MainActivity : Activity() {
         val storeView = WebView(this)
         store = storeView
         configure(storeView)
+        // Epic's current checkout does not open with the default JavaScript popup setting.
+        storeView.settings.javaScriptCanOpenWindowsAutomatically = true
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(storeView, true)
         storeView.webViewClient = object : WebViewClient() {

@@ -314,3 +314,13 @@ test('checkout explains missing, ambiguous and unreadable totals without submitt
     assert.ok(r.messages.some(m => m.type==='waiting' && m.message.includes(reason)));
   }
 });
+
+test('checkout requests identify the page path and product progress does not imply an order', async () => {
+  const checkout = await run({mode:'claim',storeCheckout:true,
+    urlOverride:'https://store.epicgames.com/checkout',paymentText:'Total $0.00'});
+  assert.equal(checkout.messages.find(m=>m.type==='actionReady'&&m.stage==='submit').path,'/checkout');
+  const product = await run({mode:'claim'});
+  assert.equal(product.cta.clicks,1);
+  assert.ok(product.messages.some(m=>m.type==='waiting'&&/正在打开官方结算/.test(m.message)));
+  assert.ok(!product.messages.some(m=>m.type==='ordered'));
+});

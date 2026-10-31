@@ -4,7 +4,7 @@ function runPocketTask(task) {
   let finished = false, busy = false, clickedGet = false, ordered = false, lastNotice = '';
   let authChecked = false;
   let fabOwned = null;
-  const send = (type, data = {}) => PocketStore.postMessage(JSON.stringify({nonce: task.nonce, type, ...data}));
+  const send = (type, data = {}) => PocketStore.postMessage(JSON.stringify({nonce: task.nonce, type, path: location.pathname, ...data}));
   const finish = (type, data) => { if (!finished) { finished = true; send(type, data); } };
   const notice = text => { if (text !== lastNotice) { lastNotice = text; send('waiting', {message: text}); } };
   const visible = el => {
@@ -197,7 +197,10 @@ function runPocketTask(task) {
         return;
       }
       if (task.mode === 'check') { finish('result', {status: 'unowned'}); return; }
-      if (!clickedGet && !cta.disabled) requestAction('product', cta, () => { clickedGet = true; });
+      if (!clickedGet && !cta.disabled) requestAction('product', cta, () => {
+        clickedGet = true;
+        notice('正在打开官方结算。若出现验证码请在网页完成；当前尚未确认领取成功。');
+      });
     }
   }
   function checkout() {

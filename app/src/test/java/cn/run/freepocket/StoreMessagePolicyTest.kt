@@ -82,6 +82,15 @@ class StoreMessagePolicyTest {
         assertThrows(JSONException::class.java) { StoreMessagePolicy.validate("fab", data) }
     }
 
+    @Test fun sameOriginCheckoutFramesRequireTheCheckoutPath() {
+        for (type in listOf("actionReady", "ordered", "checkoutComplete", "waiting", "blocked")) {
+            val message = JSONObject().put("type", type).put("stage", "submit").put("path", "/checkout")
+            assertTrue(StoreMessagePolicy.accepts("pc", "claim", message, STORE, false))
+            message.put("path", "/p/recommendation")
+            assertFalse(StoreMessagePolicy.accepts("pc", "claim", message, STORE, false))
+        }
+    }
+
     companion object {
         private const val FAB = "https://www.fab.com"
         private const val STORE = "https://store.epicgames.com"

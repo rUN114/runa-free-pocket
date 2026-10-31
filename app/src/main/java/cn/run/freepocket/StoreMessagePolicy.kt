@@ -14,7 +14,9 @@ internal object StoreMessagePolicy {
         val product = if (category == "fab") FAB else STORE
         val productPage = main && origin == product
         // Epic checkout may run in a cross-origin iframe; Fab also has its own payment frame.
-        val checkout = productPage || origin == EPIC || (category == "fab" && origin == FAB)
+        // The path is a routing hint from our injected script; origin/main still come from WebView.
+        val storeCheckoutFrame = category != "fab" && origin == STORE && data.optString("path") == "/checkout"
+        val checkout = productPage || storeCheckoutFrame || origin == EPIC || (category == "fab" && origin == FAB)
         val login = main && (origin == product || origin == EPIC)
         return when (data.opt("type")) {
             "actionReady" -> mode == "claim" && when (data.opt("stage")) {
