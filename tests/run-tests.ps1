@@ -5,10 +5,6 @@ try {
     $scripts = @(Get-ChildItem -LiteralPath tests -Filter '*.test.cjs' | ForEach-Object FullName)
     & node --test @scripts
     if ($LASTEXITCODE -ne 0) { throw 'JavaScript tests failed' }
-    $classes = Join-Path ([IO.Path]::GetTempPath()) ('freepocket-tests-' + [guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $classes | Out-Null
-    & javac --release 17 -encoding UTF-8 -d $classes app/src/main/java/cn/run/freepocket/EpicEntitlements.java tests/java/EpicEntitlementsTest.java
-    if ($LASTEXITCODE -ne 0) { throw 'Java ownership test compilation failed' }
-    & java -cp $classes cn.run.freepocket.EpicEntitlementsTest
-    if ($LASTEXITCODE -ne 0) { throw 'Java ownership tests failed' }
+    # 原生拥有凭证分页检查已迁入 Gradle 单元测试：app/src/test/.../EpicEntitlementsTest.kt，
+    # 随 `./gradlew.bat testReleaseUnitTest` 一起运行，不再单独编译 Java 测试类。
 } finally { Pop-Location }

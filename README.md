@@ -55,13 +55,15 @@ APK SHA-256：
 ./tests/run-tests.ps1
 ```
 
+Windows 用户名含撇号等特殊字符时，Gradle 测试进程无法从这类路径启动（测试类路径经由 JDK 参数文件传递，特殊字符会破坏解析）；此时把工程复制到不含特殊字符的目录再运行上述检查。
+
 正式签名资料放在仓库外，参照 [测试与签名说明](docs/TESTING.md) 配置自己的密钥：
 
 ```powershell
 ./gradlew.bat "-PrunaSigningProperties=D:/private/signing.properties" assembleRelease lintRelease
 ```
 
-主要文件：`MainActivity.java` 管理安卓界面和队列；`ClaimJournal.java` 保存按账号绑定的进度和未确认操作；`EpicSession.java`、`EpicEntitlements.java` 读取授权与库存；`OfficialImages.java` 处理官方图片下载和缓存；`domain.js`、`automation.js`、`ui.js` 分别处理规则、官方网页和界面。
+主要文件：`MainActivity.kt` 管理安卓界面和队列；`ClaimJournal.kt` 保存按账号绑定的进度和未确认操作；`EpicSession.kt`、`EpicEntitlements.kt` 读取授权与库存；`OfficialImages.kt` 处理官方图片下载和缓存；`domain.js`、`automation.js`、`ui.js` 分别处理规则、官方网页和界面。原生代码已全部使用 Kotlin（AGP 9 内置 Kotlin 编译，无需额外插件）。
 
 旧版本标签保留。`v0.1.0`、`v0.2.0`、`v0.3.0` 是从旧源码包补录的快照，之后为正常开发提交，详见 CHANGELOG。原始视觉资源保留于 `design/brand-source/`，不打入 APK；处理方式见 [品牌资源说明](docs/BRANDING.md)。
 

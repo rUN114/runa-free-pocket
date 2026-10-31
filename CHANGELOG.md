@@ -2,6 +2,14 @@
 
 2026-10-17 建立本地 Git 仓库。旧版 v0.1.0、v0.2.0、v0.3.0 由原有完整源码 ZIP 逐版导入，每个标签的源码文件内容已与对应 ZIP 逐个比对。原版本没有 Git 提交记录，补录提交的日期代表导入日期。
 
+## 1.0.1 测试候选 — 原生代码全部迁移为 Kotlin
+
+2026-10-31。将 app 模块剩余 Java 源码全部转换为等价 Kotlin：`MainActivity`、`ClaimJournal`、`EpicSession`、`OfficialImages`，以及全部 JVM 单元测试和设备验证脚本（`ReleaseVerification`、`CheckpointBridgeFixture`）。`tests/java` 的独立拥有凭证分页检查迁入 Gradle 单元测试（`EpicEntitlementsTest.kt`，8 项），`tests/run-tests.ps1` 只保留 JavaScript 检查。AGP 9 内置 Kotlin 编译，`build.gradle` 未新增插件、依赖或 keep 规则；类名、包名、页面脚本（domain.js/automation.js/ui.js）与领取、许可、账号语义保持不变。仅两处有意的健壮性调整：Epic 会话初始化失败后的重试捕获从四种异常联合放宽为 `Exception`（AndroidKeyStore 的 `ProviderException` 是 RuntimeException，原联合捕获接不住）；账号清理窗口期对已销毁 WebView 的调用改为空安全（原代码在该窗口会崩溃）。
+
+验证（在 `D:\Android\Builds\runa-pocket-kt-stage` 的无特殊字符路径副本完成，原因见下）：assembleDebug、testReleaseUnitTest（38 项 JUnit，0 失败；含迁入的 8 项分页检查）、assembleRelease（R8 与资源压缩，未签名包 336,993 字节，较 1.0.0 增加 5.5 KiB，为 Kotlin 标准库裁剪后的增量）、assembleReleaseAndroidTest、lintRelease（0 错误、59 警告；新增警告主要来自 Kotlin 属性写法触发的 SetTextI18n 硬编码文本提示，未禁用任何规则）、78 项 JavaScript 测试通过。androidTest 仅编译通过，未在模拟器或真机执行；安装、启动、真实领取、账号切换与中断恢复等运行时行为与迁移前的一致性仍待设备回归，未新增真实订单验证。
+
+本机 Windows 用户名含撇号（`Ru'n`），Gradle 测试进程的类路径经由 JDK 参数文件传递，撇号会破坏解析导致测试类无法加载；从默认 `C:\Users\...` 路径运行单元测试必然失败（与本次迁移无关，Java 时代同样存在，此前验证一直使用 D 盘 stage 副本）。README 已补充该约束。另将 10-30 晚间生成、未纳入版本库的 `gradle/gradle-daemon-jvm.properties` 重命名为 `.bak` 保留在工作区（此前已验证的环境未使用该文件）。此候选不移动现有标签、不发布 GitHub Release。
+
 ## 1.0.1 测试候选 — 网络诊断与 Fab 许可选择
 
 2026-10-30。连接错误细分、加载超时提醒、只读连接一次重试和官方域名探测；新增Fab许可设置、商品页档位选择/免费校验、原生绑定许可确认及请求记录。未新增生产依赖。
