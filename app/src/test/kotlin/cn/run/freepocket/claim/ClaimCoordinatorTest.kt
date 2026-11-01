@@ -46,7 +46,47 @@ class ClaimCoordinatorTest {
         assertFalse(fixture.coordinator.busy)
         assertNull(fixture.browser)
         assertTrue(fixture.coordinator.message.contains("无法保存"))
-        assertEquals("uncertain", fixture.backend.journal.entry(KEY)!!.getString("status"))
+        assertEquals("pending", fixture.backend.journal.entry(KEY)!!.getString("status"))
+        assertEquals("paused", fixture.backend.journal.current()!!.getString("state"))
+        assertFalse(fixture.backend.journal.entry(KEY)!!.optBoolean("productAuthorized"))
+        fixture.coordinator.close()
+    }
+
+    @Test fun storageRecoveryCanRetryAnUnissuedProductAndRejectsItsOldPage() = runTest {
+        val fixture = Fixture(this)
+        fixture.beginClaim()
+        val oldRequest = fixture.actionReady()
+        fixture.backend.canSave = false
+        val replies = mutableListOf<JSONObject>()
+        fixture.coordinator.onWebMessage(oldRequest, STORE, true, replies::add)
+        assertTrue(replies.isEmpty())
+        fixture.backend.canSave = true
+        fixture.coordinator.command(JSONObject().put("action", "resumeBatch"))
+        runCurrent()
+        assertEquals("claim", fixture.browser?.mode)
+        fixture.coordinator.onWebMessage(fixture.actionReady(), STORE, true, replies::add)
+        assertEquals(1, replies.size)
+        fixture.coordinator.onWebMessage(oldRequest, STORE, true, replies::add)
+        assertEquals("Old page cannot receive the new run's permission", 1, replies.size)
+        fixture.coordinator.close()
+    }
+
+    @Test fun failedSubmitSavePreservesAlreadyIssuedProductReservation() = runTest {
+        val fixture = Fixture(this)
+        fixture.beginClaim()
+        val replies = mutableListOf<JSONObject>()
+        fixture.coordinator.onWebMessage(fixture.actionReady(), STORE, true, replies::add)
+        fixture.backend.canSave = false
+        fixture.coordinator.onWebMessage(fixture.actionReady().put("stage", "submit"), "https://www.epicgames.com", false, replies::add)
+        assertEquals(1, replies.size)
+        val entry = fixture.backend.journal.entry(KEY)!!
+        assertTrue(entry.getBoolean("productAuthorized"))
+        assertFalse(entry.optBoolean("submitAuthorized"))
+        assertEquals("uncertain", entry.getString("status"))
+        fixture.backend.canSave = true
+        fixture.coordinator.command(JSONObject().put("action", "resumeBatch"))
+        runCurrent()
+        assertFalse(fixture.browser?.mode == "claim")
         fixture.coordinator.close()
     }
 
@@ -179,6 +219,22 @@ class ClaimCoordinatorTest {
         assertFalse(fixture.browser!!.autoRetryAllowed)
         fixture.coordinator.retry()
         assertFalse(fixture.browser!!.autoRetryAllowed)
+        fixture.coordinator.close()
+    }
+
+    @Test fun obsoleteBrowserFailureCannotStopANewReadTask() = runTest {
+        val fixture = Fixture(this)
+        fixture.coordinator.command(JSONObject().put("action", "refresh").put("category", "android"))
+        val obsolete = fixture.browser!!.id
+        fixture.coordinator.retry()
+        val current = fixture.browser!!.id
+        fixture.coordinator.browserFailed(obsolete, "obsolete failure")
+        assertEquals(current, fixture.browser!!.id)
+        assertTrue(fixture.coordinator.busy)
+        fixture.coordinator.browserFailed(current, "actual browser failure")
+        assertNull(fixture.browser)
+        assertFalse(fixture.coordinator.busy)
+        assertEquals("actual browser failure", fixture.coordinator.message)
         fixture.coordinator.close()
     }
 

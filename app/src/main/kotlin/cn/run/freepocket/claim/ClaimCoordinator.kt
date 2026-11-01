@@ -477,11 +477,13 @@ internal class ClaimCoordinator(
                 journal!!.entry(item.key)!!.put("selectedFabTier", task.fabTier)
             } else if (!task.fabTierVerified) { fail("未取得本次商品页许可确认，未提交订单。"); return }
         }
-        try { journal!!.reserve(item.key, stage) } catch (_: JSONException) {
+        val saved = try {
+            journal!!.reserveAndSave(item.key, stage, backend::saveJournal)
+        } catch (_: JSONException) {
             fail("此项目存在待核实操作或重复请求，请先在领取记录中核实。")
             return
         }
-        if (!saveJournal()) return
+        if (!saved) { journalSaveFailed(); return }
         // The host installs this same-nonce script before delivering the permit to the page.
         if (task.category == Category.FAB && stage == "product") showActiveBrowser(task)
         reply(JSONObject().put("fabTierVerified", task.fabTierVerified).put("type", "actionPermit").put("nonce", task.nonce).put("stage", stage))
@@ -543,7 +545,10 @@ internal class ClaimCoordinator(
     }
 
     fun onNavigation(url: String) {
-        val uri = try { URI.create(url) } catch (_: IllegalArgumentException) { return }
+        val uri = try { URI.create(url) } catch (_: IllegalArgumentException) {
+            active?.fabTierVerified = false
+            return
+        }
         val task = active
         if (task?.category == Category.FAB && task.fabTierVerified) {
             val productPath = URI.create(task.item!!.url).path
@@ -558,6 +563,16 @@ internal class ClaimCoordinator(
         catalogue.invalidate(epic = true)
         publish()
         if (task != null) fail("Epic 网页登录已过期，请重新连接账号后继续领取。")
+    }
+
+    fun browserFailed(nonce: String, reason: String) {
+        if (current(nonce)) fail(reason)
+        else if (!closed && active == null && manualItem != null) {
+            manualItem = null
+            onBrowserChanged(null)
+            message = reason
+            publish()
+        }
     }
 
     fun retry() {
@@ -642,10 +657,15 @@ internal class ClaimCoordinator(
 
     private fun saveJournal(): Boolean {
         if (backend.saveJournal()) return true
-        clearWork()
-        message = "无法保存领取进度，已停止自动操作。请检查手机存储空间后重试。"
-        publish()
+        journalSaveFailed()
         return false
+    }
+
+    private fun journalSaveFailed() {
+        journal?.pause("写入失败，已暂停；恢复存储后继续将先核实库存，已有操作预约保持保护")
+        clearWork()
+        message = "无法保存领取进度，已停止自动操作。恢复手机存储后可继续任务；此前可能提交的订单仍只核实，不自动重下单。"
+        publish()
     }
 
     private fun resetAccount(reconnect: Boolean, category: Category) {

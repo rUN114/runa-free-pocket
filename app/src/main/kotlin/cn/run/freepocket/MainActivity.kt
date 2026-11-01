@@ -18,6 +18,7 @@ import androidx.webkit.WebViewFeature
 import cn.run.freepocket.ui.NativePocketView
 import cn.run.freepocket.ui.PocketViewModel
 import cn.run.freepocket.web.OfficialBrowserController
+import cn.run.freepocket.web.BrowserRequest
 import kotlinx.coroutines.launch
 
 /** Android lifecycle and view wiring; no inventory, account or claim decisions live here. */
@@ -42,8 +43,8 @@ class MainActivity : ComponentActivity() {
             onMessage = { data, origin, main, reply ->
                 model.webMessage(data, origin, main) { permit ->
                     // Fab grants update the script for future checkout frames before replying.
-                    model.browser.value?.let(browser::show)
-                    reply(permit)
+                    val request = model.browser.value
+                    if (request != null && showBrowser(request)) reply(permit)
                 }
             }, onBack = model::browserBack, onRetry = model::browserRetry,
             onSkip = model::browserSkip, onNavigation = model::navigation)
@@ -78,11 +79,17 @@ class MainActivity : ComponentActivity() {
                         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     }
                 }
-                launch { model.browser.collect { request -> if (request == null) browser.hide() else browser.show(request) } }
+                launch { model.browser.collect { request -> if (request == null) browser.hide() else showBrowser(request) } }
                 launch { model.browserStatus.collect { if (it.isNotEmpty()) browser.setStatus(it) } }
                 launch { model.clearSession.collect { if (it) browser.clearSession(model::sessionCleared) } }
             }
         }
+    }
+
+    private fun showBrowser(request: BrowserRequest): Boolean {
+        if (browser.show(request)) return true
+        model.browserFailed(request.id)
+        return false
     }
 
     override fun onStart() { super.onStart(); if (::model.isInitialized) model.setVisible(true) }

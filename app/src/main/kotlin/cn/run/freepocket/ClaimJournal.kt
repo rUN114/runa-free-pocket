@@ -63,7 +63,7 @@ internal class ClaimJournal @Throws(JSONException::class) constructor(json: Stri
 
     @Throws(JSONException::class)
     fun bind(category: String, accountId: String?, displayName: String?) {
-        if (accountId == null || accountId.isEmpty()) throw JSONException("无法确认领取账号身份")
+        if (accountId.isNullOrEmpty()) throw JSONException("无法确认领取账号身份")
         val owners = current()!!.getJSONObject("owners")
         val platformKey = platform(category)
         val previous = owners.optJSONObject(platformKey)
@@ -159,6 +159,30 @@ internal class ClaimJournal @Throws(JSONException::class) constructor(json: Stri
         reservations.put(reservation, current.getString("id"))
         entry.put(stage + "Authorized", true)
         update(entry, "uncertain", "领取操作已准备，恢复时须先核实库存")
+    }
+
+    /**
+     * Only this not-yet-issued stage may be rolled back. Earlier successful permits
+     * and their reservation must survive a later write failure.
+     */
+    fun reserveAndSave(key: String, stage: String, save: () -> Boolean): Boolean {
+        val entry = checkNotNull(entry(key))
+        val before = JSONObject(entry.toString())
+        val reservation = reservationKey(entry)
+        val previous = reservations.optString(reservation)
+        reserve(key, stage)
+        var saved = false
+        try {
+            saved = save()
+            return saved
+        } finally {
+            if (!saved) {
+                for (name in entry.keys().asSequence().toList()) entry.remove(name)
+                for (name in before.keys()) entry.put(name, before.get(name))
+                if (previous.isEmpty()) reservations.remove(reservation)
+                else reservations.put(reservation, previous)
+            }
+        }
     }
 
     @Throws(JSONException::class)

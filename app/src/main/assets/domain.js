@@ -1,3 +1,7 @@
+// Native migration note: parsePc/applyOwnership are retained as legacy regression
+// references; production PC parsing and ownership decisions live in CatalogRules.kt.
+// zeroTotal is a compatibility wrapper for legacy tests. Official checkout calls
+// totalState and zeroFreeCheckout below; do not change only zeroTotal to alter checkout.
 (function (root) {
   'use strict';
   function array(value, label) {
@@ -173,7 +177,7 @@
     const lines = String(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const freeCard = /This is free\. Add it to your library to get started\.|这是免费的[。.]\s*将其添加到您的游戏库即可开始[。.]|此内容免费[。.]\s*添加到游戏库即可开始[。.]/i;
     if (!freeCard.test(lines.join(' '))) return null;
-    // An existing total must be handled by zeroTotal, never bypassed by the free-card layout.
+    // An existing total must be handled by totalState, never bypassed by the free-card layout.
     if (lines.some(line => /^(?:(?:order|grand)\s+)?(?:total\b|总计|合计|總計)/i.test(line))) return null;
     const prices = lines.filter(line => /\b(?:USD|EUR|GBP|CNY|HKD|JPY|RMB)\b|US\$|HK\$|CN¥|[$€£¥￥]/i.test(line));
     if (prices.length !== 1) return null;

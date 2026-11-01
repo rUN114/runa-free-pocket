@@ -16,6 +16,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.EditText
 import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.TextView
@@ -30,6 +31,7 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -55,6 +57,12 @@ class NativeVerification : Instrumentation() {
                 "fixture" -> fixture()
                 "browserFixture" -> browserFixture()
                 "timeoutFixture" -> timeoutFixture()
+                "progressTimeoutFixture" -> timeoutFixture(progress = true)
+                "showFailureFixture" -> showFailureFixture()
+                "accountDraftFixture" -> accountDraftFixture()
+                "slowProgressFixture" -> slowProgressFixture()
+                "networkErrorFixture" -> networkErrorFixture()
+                "recoveryPrepare", "recoveryResume", "commitBenchmark" -> recoveryDiagnostic(args.getString("mode")!!)
                 else -> error("Unknown mode")
             }
             result.putString("verification", "passed: " + args.getString("mode", "inspect"))
@@ -249,7 +257,7 @@ class NativeVerification : Instrumentation() {
             .put("staleNonceRejected",true).put("updatedScriptInChildFrame",true).put("ordersRequested",0).toString())
     }
 
-    private fun timeoutFixture() {
+    private fun timeoutFixture(progress: Boolean = false) {
         val host=launch(true)
         lateinit var browser:OfficialBrowserController
         onMain {
@@ -264,12 +272,176 @@ class NativeVerification : Instrumentation() {
                     WebResourceResponse("text/html","UTF-8",ByteArrayInputStream("<html><body>无响应诊断</body></html>".toByteArray()))
             }
             web.loadUrl("https://store.epicgames.com/empty-fixture")
+            if (progress) browser.setStatus("诊断进度：请完成官网验证")
         }
-        await(43000,"Silent official-page adapter did not produce read timeout") {
-            onMain { views(browser.view).filterIsInstance<TextView>().any { it.text.toString().startsWith("网页读取超时") } }
+        await(43000,"Official-page adapter did not preserve progress and produce read timeout") {
+            onMain { views(browser.view).filterIsInstance<TextView>().any {
+                val text = it.text.toString()
+                text.contains("网页读取超时") && (!progress || text.contains("诊断进度：请完成官网验证"))
+            } }
         }
-        write("timeout-fixture.json",JSONObject().put("fixtureOnly",true).put("readTimeoutVisible",true).put("ordersRequested",0).toString())
+        val artifact = if (progress) "progress-timeout-fixture.json" else "timeout-fixture.json"
+        write(artifact,JSONObject().put("fixtureOnly",true).put("readTimeoutVisible",true)
+            .put("progressPreserved", progress).put("ordersRequested",0).toString())
         onMain { browser.close(); host.finish() }
+    }
+
+    private fun slowProgressFixture() {
+        val host = launch(true)
+        val releaseBody = CountDownLatch(1)
+        var startedAt = 0L
+        val intercepted = java.util.concurrent.atomic.AtomicBoolean(false)
+        val browser = onMain { OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {}) }
+        lateinit var web: WebView
+        try {
+            onMain {
+                host.setContentView(browser.view)
+                check(browser.show(BrowserRequest("slow-progress-fixture", "https://store.epicgames.com/slow-diagnostic",
+                    "慢页面进度诊断", Category.PC, "discover", 1, 1, autoRetryAllowed = false)))
+                web = views(browser.view).filterIsInstance<WebView>().single()
+                web.stopLoading()
+                val delegate = web.webViewClient
+                web.webViewClient = object : WebViewClient() {
+                    override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                        delegate.onPageStarted(view, url, favicon)
+                        startedAt = SystemClock.elapsedRealtime()
+                        browser.setStatus("诊断进度：请完成官网验证")
+                    }
+                    override fun onPageFinished(view: WebView, url: String) = delegate.onPageFinished(view, url)
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
+                        intercepted.set(true)
+                        val header = "<html><head><title>本机慢页面</title></head><body>延迟结束".toByteArray()
+                        val body = object : InputStream() {
+                            private var index = 0
+                            override fun read(): Int {
+                                if (index < header.size) return header[index++].toInt() and 255
+                                releaseBody.await(55, TimeUnit.SECONDS)
+                                return -1
+                            }
+                            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                                if (length == 0) return 0
+                                if (index == header.size) { releaseBody.await(55, TimeUnit.SECONDS); return -1 }
+                                val count = minOf(length, header.size - index)
+                                header.copyInto(buffer, offset, index, index + count)
+                                index += count
+                                return count
+                            }
+                        }
+                        return WebResourceResponse("text/html", "UTF-8", body)
+                    }
+                }
+                web.loadUrl("https://store.epicgames.com/slow-intercepted-diagnostic")
+            }
+            await(10000, "Slow page did not start") { onMain { startedAt > 0 } }
+            await(50000, "Real 45-second page-load callback window was not reached") {
+                onMain { SystemClock.elapsedRealtime() - startedAt >= 46500 }
+            }
+            val evidence = onMain {
+                val text = views(browser.view).filterIsInstance<TextView>().joinToString("\n") { it.text }
+                check(intercepted.get() && web.progress < 100) { "Response did not remain genuinely loading" }
+                write("slow-progress-observation.json", JSONObject().put("progress", web.progress)
+                    .put("elapsedSincePageStartedMs", SystemClock.elapsedRealtime() - startedAt)
+                    .put("productionPageStartedDelegated", true).put("intercepted", intercepted.get())
+                    .put("progressTextPresent", text.contains("诊断进度：请完成官网验证"))
+                    .put("reminderPresent", text.contains("网页读取超时")).toString())
+                check(text.contains("诊断进度：请完成官网验证") && text.contains("网页读取超时")) {
+                    "45-second slow-page status overwrote progress or overdue reminder"
+                }
+                JSONObject().put("progress", web.progress).put("elapsedSincePageStartedMs", SystemClock.elapsedRealtime() - startedAt)
+            }
+            write("slow-progress-fixture.json", evidence.put("fixtureOnly", true).put("ordersRequested", 0)
+                .put("productionPageStartedDelegated", true).put("progressAndReminderPreserved", true).toString())
+        } finally {
+            releaseBody.countDown()
+            onMain { browser.close(); host.finish() }
+        }
+    }
+
+    private fun accountDraftFixture() {
+        val host = launch(true)
+        val state = PocketUiState(country = "CN")
+        lateinit var ui: NativePocketView
+        onMain {
+            ui = NativePocketView(host) { error("Draft fixture unexpectedly dispatched a state-changing action") }
+            host.setContentView(ui.view)
+            ui.render(state)
+            host.findViewById<Button>(R.id.account).performClick()
+            val input = views(ui.view).filterIsInstance<EditText>().single()
+            check(input.text.toString() == "CN")
+            input.setText("HK")
+            ui.render(state.copy(busy = true))
+            check(views(ui.view).filterIsInstance<EditText>().single().text.toString() == "HK") {
+                "Unsubmitted country draft was lost on busy update"
+            }
+            ui.render(state.copy(busy = false))
+            check(views(ui.view).filterIsInstance<EditText>().single().text.toString() == "HK") {
+                "Unsubmitted country draft was lost on idle update"
+            }
+            ui.render(state.copy(country = "US"))
+            check(views(ui.view).filterIsInstance<EditText>().single().text.toString() == "US") {
+                "Externally committed country did not replace draft"
+            }
+            ui.close()
+            host.finish()
+        }
+        write("account-draft-fixture.json", JSONObject().put("fixtureOnly", true).put("ordersRequested", 0)
+            .put("draftPreserved", true).put("committedCountryReflected", true).toString())
+    }
+
+    private fun showFailureFixture() {
+        val host = launch(true)
+        onMain {
+            val browser = OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {})
+            host.setContentView(browser.view)
+            for (url in listOf("https://[", "https://untrusted.example/product", "https://store.epicgames.com:1/product")) {
+                check(!browser.show(BrowserRequest("rejected-url", url, "拒绝诊断", Category.PC, "check", 1, 1, autoRetryAllowed = false)))
+                check(views(browser.view).none { it is WebView })
+            }
+            browser.close()
+            check(!browser.show(BrowserRequest("closed-browser", "https://store.epicgames.com/p/diagnostic",
+                "已关闭诊断", Category.PC, "check", 1, 1, autoRetryAllowed = false)))
+            check(views(browser.view).none { it is WebView })
+            host.finish()
+        }
+        write("show-failure-fixture.json", JSONObject().put("fixtureOnly", true).put("ordersRequested", 0)
+            .put("invalidAndExternalRejected", true).put("closedRejected", true).toString())
+    }
+
+    private fun networkErrorFixture() {
+        val host = launch(true)
+        lateinit var browser: OfficialBrowserController
+        onMain {
+            browser = OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {})
+            host.setContentView(browser.view)
+            browser.show(BrowserRequest("network-error-fixture",
+                "https://store.epicgames.com/diagnostic", "网络错误诊断",
+                Category.PC, "check", 1, 1, autoRetryAllowed = false))
+            val web = views(browser.view).filterIsInstance<WebView>().single()
+            web.stopLoading()
+            web.loadUrl("https://store.epicgames.com:1/diagnostic?secret=DO_NOT_DISPLAY")
+        }
+        await(20000, "Network error was not visible") {
+            onMain { views(browser.view).filterIsInstance<TextView>().any { it.text.toString().contains("页面加载失败") } }
+        }
+        val text = onMain { views(browser.view).filterIsInstance<TextView>().joinToString("\n") { it.text } }
+        check(!text.contains("DO_NOT_DISPLAY") && !text.contains("secret=") && !text.contains("/diagnostic"))
+        check(text.contains("store.epicgames.com"))
+        write("network-error-fixture.json", JSONObject().put("fixtureOnly", true)
+            .put("nativeErrorRedacted", true).put("ordersRequested", 0).toString())
+        onMain { browser.close(); host.finish() }
+    }
+
+    private fun recoveryDiagnostic(mode: String) {
+        val host = startActivitySync(Intent().setComponent(ComponentName(
+            "cn.run.freepocket", "cn.run.freepocket.ui.NativeRecoveryActivity"
+        )).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        activity = host
+        val value = onMain { host.javaClass.getMethod("execute", String::class.java).invoke(host, mode) as String }
+        val result = JSONObject(value)
+        check(result.getBoolean("passed") && result.getString("mode") == mode)
+        write("$mode.json", value)
+        // Keep the prepared process in flight until the driver force-stops it externally.
+        if (mode != "recoveryPrepare") onMain { host.finish() }
     }
 
     private fun seedImage(url:String) {

@@ -1,5 +1,6 @@
 package cn.run.freepocket.ui
 
+import android.annotation.SuppressLint
 import android.content.res.ColorStateList
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -28,6 +29,7 @@ internal class CatalogAdapter(
     private var rows: List<Row> = emptyList()
     private var categoryItems: List<CatalogItem> = emptyList()
 
+    @SuppressLint("NotifyDataSetChanged")
     fun submit(value: PocketUiState, parent: ViewGroup) {
         state = value
         val context = parent.context

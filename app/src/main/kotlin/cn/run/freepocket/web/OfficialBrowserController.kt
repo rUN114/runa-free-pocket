@@ -50,6 +50,8 @@ class OfficialBrowserController(
     private var request: BrowserRequest? = null
     private var scriptHandler: ScriptHandler? = null
     private var readTimeout: Runnable? = null
+    private var progressText = ""
+    private var readOverdue = false
     private var navigation = 0L
     private var generation = 0L
     private var retried = false
@@ -86,15 +88,14 @@ class OfficialBrowserController(
     }
 
     /** A refreshed script must be installed before replying to Fab's product-stage permit. */
-    fun show(next: BrowserRequest) {
-        check(!closed && !clearingSession) { "官方浏览器当前不可用" }
-        require(BrowserPagePolicy.canNavigate(next.url)) { "官方页面必须使用 HTTPS" }
+    fun show(next: BrowserRequest): Boolean {
+        if (closed || clearingSession || !BrowserPagePolicy.canStart(next.url)) return false
         val previous = request
         if (previous?.id == next.id) {
             if (previous.script != next.script) installScript(webView!!, next.script)
             request = next
             updateTitle(next)
-            return
+            return true
         }
         disposePage(clearCache = false)
         request = next
@@ -111,12 +112,16 @@ class OfficialBrowserController(
         if (next.mode in setOf("discover", "syncFab")) {
             val token = generation
             val timeout = Runnable {
-                if (isCurrent(page, next.id, token)) status.setText(R.string.read_timeout)
+                if (isCurrent(page, next.id, token)) {
+                    readOverdue = true
+                    renderStatus()
+                }
                 readTimeout = null
             }
             readTimeout = timeout
             handler.postDelayed(timeout, 40000)
         }
+        return true
     }
 
     fun hide() {
@@ -127,10 +132,16 @@ class OfficialBrowserController(
 
     fun setStatus(message: String) {
         if (closed) return
-        // A validated task message is more specific than the generic read deadline.
-        readTimeout?.let(handler::removeCallbacks)
-        readTimeout = null
-        status.text = message
+        progressText = message
+        renderStatus()
+    }
+
+    private fun renderStatus() {
+        status.text = when {
+            !readOverdue -> progressText
+            progressText.isBlank() -> activity.getString(R.string.read_timeout)
+            else -> progressText + "\n" + activity.getString(R.string.read_timeout)
+        }
     }
 
     /** The owner persists its pending-reset flag before calling this asynchronous cleanup. */
@@ -271,6 +282,8 @@ class OfficialBrowserController(
         request = null
         handler.removeCallbacksAndMessages(null)
         readTimeout = null
+        progressText = ""
+        readOverdue = false
         diagnosticDialog?.dismiss()
         diagnosticDialog = null
         scriptHandler?.remove()
@@ -287,9 +300,9 @@ class OfficialBrowserController(
     }
 
     private fun cancelReadTimeout() {
-        val timeout = readTimeout ?: return
-        handler.removeCallbacks(timeout)
+        readTimeout?.let(handler::removeCallbacks)
         readTimeout = null
+        readOverdue = false
     }
 
     private fun diagnose() {

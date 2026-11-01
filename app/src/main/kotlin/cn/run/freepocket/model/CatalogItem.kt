@@ -64,11 +64,14 @@ data class CatalogItem(
                 else throw JSONException("商品库存身份格式已变化")
             val screenshots = value.optJSONArray("screenshots") ?: if (value.isNull("screenshots")) JSONArray()
                 else throw JSONException("商品截图格式已变化")
+            val category = Category.fromWire(value.getString("category"))
+            val url = value.getString("url")
+            if (!OfficialProductUrl.accepts(category, url)) throw JSONException("商品地址不属于对应的官方商城")
             return CatalogItem(
                 key = value.getString("key"),
-                category = Category.fromWire(value.getString("category")),
+                category = category,
                 title = value.getString("title"),
-                url = value.getString("url"),
+                url = url,
                 id = value.text("id"),
                 namespace = value.text("namespace"),
                 slug = value.text("slug"),

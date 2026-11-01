@@ -75,6 +75,8 @@ internal class AndroidPocketBackend(context: Context) : PocketBackend {
             .putString("updated", updated.toString()).putString("country", country)
             .putString("fabTier", fabTier).putString("fabAccount", fabAccount.toString()).apply()
     }
+    // Deliberate durability barrier before page permits. Device cost and the retained
+    // main-thread trade-off are recorded in docs/NATIVE-REVIEW-FIXES-2026-11-01.md.
     override fun saveJournal(): Boolean = journalPreferences.edit()
         .putString("data", checkNotNull(journal).serialize()).commit()
     override fun setResetPending(pending: Boolean): Boolean = cache.edit()

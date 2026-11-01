@@ -182,6 +182,10 @@ internal class PocketViewModel(application: Application) : AndroidViewModel(appl
     }
     fun webMessage(data: JSONObject, origin: String, main: Boolean, reply: (JSONObject) -> Unit) = coordinator?.onWebMessage(data, origin, main, reply)
     fun navigation(url: String) { coordinator?.onNavigation(url) }
+    fun browserFailed(nonce: String) {
+        if (mutableBrowser.value?.id == nonce)
+            coordinator?.browserFailed(nonce, "官方页面地址无效或浏览器暂不可用，请返回后刷新活动重试。")
+    }
     fun browserBack() { coordinator?.back() }
     fun browserRetry() { coordinator?.retry() }
     fun browserSkip() { coordinator?.skip() }

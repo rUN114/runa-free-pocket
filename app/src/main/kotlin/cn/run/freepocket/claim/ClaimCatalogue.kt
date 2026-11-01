@@ -8,7 +8,7 @@ import cn.run.freepocket.model.Ownership
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
-import java.net.URI
+import cn.run.freepocket.model.OfficialProductUrl
 
 /** One boundary for the existing cache format; queue decisions use the catalog model. */
 internal class ClaimCatalogue(private val backend: PocketBackend) {
@@ -18,9 +18,7 @@ internal class ClaimCatalogue(private val backend: PocketBackend) {
 
     fun replace(category: Category, fresh: List<CatalogItem>) {
         for (item in fresh) {
-            val uri = URI.create(item.url)
-            val expected = if (category == Category.FAB) "www.fab.com" else "store.epicgames.com"
-            if (item.category != category || uri.scheme != "https" || uri.host != expected || uri.userInfo != null || uri.port != -1) {
+            if (item.category != category || !OfficialProductUrl.accepts(category, item.url)) {
                 throw JSONException("商品地址不属于官方商城")
             }
         }

@@ -14,6 +14,17 @@ class BrowserPagePolicyTest {
         }
     }
 
+    @Test fun initialTaskPageMustBelongToAnAllowedOfficialOrigin() {
+        for (url in listOf("https://store.epicgames.com/p/game", "https://www.fab.com/login",
+            "https://www.epicgames.com/id/login?state=secret")) assertTrue(url, BrowserPagePolicy.canStart(url))
+        for (url in listOf("https://external.example/product", "https://user@www.fab.com/listings/id",
+            "https://www.fab.com:8443/login", "http://www.fab.com/login", "https://[", "")) {
+            assertFalse(url, BrowserPagePolicy.canStart(url))
+        }
+        // HTTPS links inside a task page may navigate, but cannot become an application task start.
+        assertTrue(BrowserPagePolicy.canNavigate("https://external.example/legal"))
+    }
+
     @Test fun diagnosticsNeverDisplayAuthorizationQueryOrUserInfo() {
         assertEquals("www.epicgames.com", BrowserPagePolicy.displayHost(
             "https://user:secret@www.epicgames.com/id/redirect?code=authorization#token"))
