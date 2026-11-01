@@ -1,0 +1,36 @@
+<resources>
+    <color name="native_background">#071329</color>
+    <color name="native_surface">#11213C</color>
+    <color name="native_surface_variant">#193252</color>
+    <color name="native_on_surface">#FFF3DD</color>
+    <color name="native_on_surface_variant">#C3D2E7</color>
+    <color name="native_primary">#FFD279</color>
+    <color name="native_on_primary">#241B0B</color>
+    <color name="native_error">#FFC6BD</color>
+    <color name="native_success">#B8DEC9</color>
+    <style name="native_pocket_theme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">@color/native_primary</item>
+        <item name="android:colorControlNormal">@color/native_on_surface_variant</item>
+        <item name="android:colorButtonNormal">@color/native_surface_variant</item>
+        <item name="android:textColorPrimary">@color/native_on_surface</item>
+        <item name="android:textColorSecondary">@color/native_on_surface_variant</item>
+        <item name="android:windowBackground">@color/native_background</item>
+    </style>
+    <style name="native_body">
+        <item name="android:layout_width">match_parent</item><item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">14sp</item><item name="android:textColor">@color/native_on_surface_variant</item>
+        <item name="android:lineSpacingExtra">3dp</item>
+    </style>
+    <style name="native_title" parent="native_body">
+        <item name="android:textSize">20sp</item><item name="android:textStyle">bold</item><item name="android:textColor">@color/native_on_surface</item>
+    </style>
+    <style name="native_button">
+        <item name="android:layout_width">wrap_content</item><item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">48dp</item><item name="android:minWidth">48dp</item><item name="android:textSize">14sp</item>
+        <item name="android:textAllCaps">false</item><item name="android:textColor">@color/native_button_text</item>
+    </style>
+    <style name="native_primary" parent="native_button">
+        <item name="android:backgroundTint">@color/native_primary_fill</item><item name="android:textColor">@color/native_primary_text</item>
+    </style>
+</resources>

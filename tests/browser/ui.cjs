@@ -4,9 +4,14 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const {chromium} = require('playwright');
-const assets = path.resolve(__dirname, '../../app/src/main/assets');
+const assets = path.resolve(__dirname, '../legacy-web');
 const server = http.createServer((request, response) => {
-  const file = path.resolve(assets, '.' + new URL(request.url, 'http://localhost').pathname);
+  const pathname = new URL(request.url, 'http://localhost').pathname;
+  if (pathname === '/domain.js') {
+    response.setHeader('Content-Type','text/javascript');
+    response.end(fs.readFileSync(path.resolve(__dirname,'../../app/src/main/assets/domain.js'))); return;
+  }
+  const file = path.resolve(assets, '.' + pathname);
   if (!file.startsWith(assets + path.sep) || !fs.existsSync(file)) { response.writeHead(404); response.end(); return; }
   response.setHeader('Content-Type', {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp'}[path.extname(file)] || 'application/octet-stream');
   response.end(fs.readFileSync(file));

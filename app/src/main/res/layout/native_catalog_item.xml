@@ -1,0 +1,13 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12dp" android:layout_marginHorizontal="4dp" android:orientation="vertical" android:background="@color/native_surface" android:paddingBottom="8dp">
+    <FrameLayout android:id="@+id/artwork" android:layout_width="match_parent" android:layout_height="156dp" android:background="@color/native_surface_variant">
+        <ImageView android:id="@+id/image" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" />
+        <Button android:id="@+id/image_status" style="@style/native_button" android:layout_width="match_parent" android:layout_height="match_parent" android:backgroundTint="@color/native_surface_variant" android:text="@string/native_image_loading" />
+    </FrameLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:paddingHorizontal="8dp">
+        <CheckBox android:id="@+id/selected" android:layout_width="48dp" android:layout_height="48dp" />
+        <TextView android:id="@+id/title" style="@style/native_title" android:layout_width="0dp" android:layout_weight="1" android:textSize="17sp" android:minHeight="48dp" android:gravity="center_vertical" android:background="?android:attr/selectableItemBackground" />
+    </LinearLayout>
+    <TextView android:id="@+id/ownership" style="@style/native_body" android:paddingHorizontal="16dp" />
+    <TextView android:id="@+id/deadline" style="@style/native_body" android:textColor="@color/native_primary" android:paddingHorizontal="16dp" android:paddingTop="4dp" />
+    <TextView android:id="@+id/checked" style="@style/native_body" android:paddingHorizontal="16dp" android:paddingTop="4dp" />
+</LinearLayout>

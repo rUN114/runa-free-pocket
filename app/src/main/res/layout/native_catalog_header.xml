@@ -1,0 +1,21 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingBottom="12dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:background="@color/native_surface">
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical" android:padding="12dp">
+            <TextView android:id="@+id/scene_title" style="@style/native_title" android:textSize="18sp" />
+            <TextView android:id="@+id/connection" style="@style/native_body" android:layout_marginTop="8dp" />
+        </LinearLayout>
+        <ImageView android:id="@+id/scene" android:layout_width="88dp" android:layout_height="88dp" android:scaleType="fitCenter" android:contentDescription="@null" />
+    </LinearLayout>
+    <TextView android:id="@+id/updated" style="@style/native_body" android:paddingTop="8dp" />
+    <TextView android:id="@+id/message" style="@style/native_body" android:accessibilityLiveRegion="polite" android:paddingVertical="8dp" />
+    <TextView android:id="@+id/journal_error" style="@style/native_body" android:textColor="@color/native_error" android:paddingVertical="8dp" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content">
+        <Button android:id="@+id/refresh" style="@style/native_button" android:layout_width="0dp" android:layout_weight="1" android:text="@string/native_refresh" />
+        <Button android:id="@+id/sync" style="@style/native_button" android:layout_width="0dp" android:layout_weight="1" android:layout_marginStart="8dp" android:text="@string/native_sync" />
+        <Button android:id="@+id/resume" style="@style/native_button" android:layout_width="0dp" android:layout_weight="1" android:paddingHorizontal="4dp" android:text="@string/native_resume_short" android:visibility="gone" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content">
+        <CheckBox android:id="@+id/select_all" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:minHeight="48dp" android:textSize="14sp" android:text="@string/native_select_all" />
+        <CheckBox android:id="@+id/hide_owned" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minHeight="48dp" android:textSize="14sp" android:text="@string/native_hide_owned" />
+    </LinearLayout>
+</LinearLayout>

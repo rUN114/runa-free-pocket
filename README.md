@@ -1,38 +1,63 @@
-> 当前开发分支包含 **1.0.1 修复测试候选**，验证范围与安装说明见 [修复记录](docs/REPAIR-1.0.1.md)。下文的公开下载、大小和校验值仍对应已发布的 1.0.0。
+# runa周免口袋 · 原生界面版
 
-# runa周免口袋 1.0.0
+当前分支为 **1.1.0-native-preview**。在安卓手机查看 Epic 电脑游戏、手机游戏与 Fab 限免素材，同步拥有状态并批量领取。最低 Android 8.0，无需电脑或自建服务器。公开 Releases 暂仍为旧版，原生版尚未上传。当前正式签名安装包583,594字节，约570KiB；保持在1MiB以内。
 
-在安卓手机上查看 Epic 电脑游戏、Android 游戏和 Fab 限免素材，同步拥有状态并批量领取。最低 Android 8.0，运行不需要电脑或自建服务器。
+主目录、详情、账号设置、领取记录已改为 Kotlin 原生 Views/XML，使用 RecyclerView 与 ViewModel。官方登录、验证码、素材库读取及结算仍使用系统 WebView；网站适配脚本保留，未捆绑浏览器内核。
 
-[下载正式版 APK](https://github.com/rUN114/runa-free-pocket/releases/latest) · [版本记录](CHANGELOG.md) · [测试说明](docs/TESTING.md) · [依赖与许可证](THIRD_PARTY_NOTICES.md)
+[原生版验证记录](docs/NATIVE-VERIFY-2026-11-01.md) · [版本记录](CHANGELOG.md) · [测试与签名](docs/TESTING.md) · [组件许可](THIRD_PARTY_NOTICES.md)
 
-安装包 **331,441 字节，约 324 KiB**。三类像素插画、官方封面和详情图继续保留，联网下载的图片缓存另计。
+## 安装与使用
 
-## 安装
+使用随本版交付的 APK。包名和正式签名沿用旧版；同签名可以覆盖安装，保留本机授权、设置和领取记录。签名不同的旧调试版无法覆盖安装，不能通过清空数据绕过账号或订单保护。
 
-1. 从 Releases 下载 `runa-free-pocket-1.0.0.apk`。
-2. **0.x 测试版需先卸载，再安装 1.0.0 并重新登录。**正式版改用专用发布签名，无法覆盖旧测试签名；卸载不会影响账号在官方商城已经拥有的游戏和素材。
-3. 更新 Android System WebView 或 Chrome，打开应用，在“账号与同步”中连接 Epic 和 Fab。登录在官方页面完成。
+- “一键领取全部”依次刷新三类活动、核实当前账号拥有状态，再处理可领取项目；也可在分类里全选或逐项选择。
+- 已拥有、未开始及已结束项目不可勾选，仍能查看详情与官网；电脑和手机版本独立判断。
+- “账号”提供连接、重新授权、切换和退出，以及地区、Fab Personal/Professional 档位设置。Epic/Fab 共用网页会话，切换或退出会一起清理本应用的两类登录。
+- “记录”保留最近20次任务及账号归属；待核实订单保留操作预约，继续任务先查库存，不会重新自动提交可能已提交的订单。
+- 官方验证码、年龄确认或首次许可协议仍需本人处理；领取时保持应用在前台。网络诊断不发送账号 Cookie，也不代表领取成功。
 
-正式版关闭应用调试与 WebView 调试，开启 R8 和资源压缩。发布签名证书 SHA-256：
+只有官方库存、权限或对应商品页能确认拥有状态。同步失败、缓存缺项或缺失商品标识显示“未确认/同步失败”，不会当作“未拥有”。自动提交前必须确认金额为零，Fab 还须核实所选许可档位；已拥有素材不代表已取得所有档位授权。
 
-`7f50e93e6634615432131e9ac7f6275dd7c8555b8b153ce7b85cad690570fb6c`
+## 当前验证边界
 
-APK SHA-256：
+2026-11-01完成原生版构建、规则/协调器自动测试、旧账号环境副本升级、原生布局及官方图片检查。详见验证记录。本次没有新增真实订单，也没有连接用户安卓真机验收；旧版真实新增领取的结果不代替本版验收。
 
-`1244ab763661d60ad7d3ddd4872b77f061f46c540d1c1a8b49a69565ad05d4b9`
+## 开发
 
-## 使用
+使用 Android Studio 打开本目录。生产 Kotlin 位于 app/src/main/kotlin/cn/run/freepocket，XML 位于 app/src/main/res。JDK 17+、Android SDK Platform 35、AGP 9.0.0（内置 Kotlin）、Gradle 9.8.2 Wrapper，固定官方 SHA256。
 
-- 点“一键领取本期全部”，依次刷新电脑游戏、手机游戏和 Fab，核实当前账号的拥有状态，再处理可领取内容。
-- 也可以进入单个分类，全选或勾选后点“领取所选”。已拥有、未开始和已结束的内容会跳过；电脑与手机版本分别判断。
-- 遇到验证码、年龄确认或首次许可协议时，在官方页面处理后继续。领取时保持应用在前台。
-- “领取记录”显示确认入库、原已拥有、跳过、失败和待核实的项目，保留最近 20 次任务。
-- 中断后点“继续未完成任务”。程序先重新读取活动和库存，只重试未提交的失败项；可能已经提交的订单只核实，避免重复自动下单。仍未确认的项目可从记录进入官网查看。
-- 活动开始、结束以及回到应用时会检查是否需要刷新。预告可以查看拥有状态，开始前不可领取。
-- 右上角可以切换账号或退出。Epic/Fab 共用本应用的网页会话，切换时一同退出；旧领取记录按原账号绑定，不能换一个账号重放。
+~~~powershell
+# local.properties 示例：sdk.dir=D\:/Android/Sdk
+./gradlew.bat assembleDebug testReleaseUnitTest
+./tests/run-tests.ps1
+# 原生诊断测试：只安装在独立模拟器/测试设备，不在正式包增加测试入口
+./gradlew.bat -PrunaTestBuildType=debug assembleDebug assembleDebugAndroidTest
+# 正式构建：签名配置保存在仓库外
+./gradlew.bat "-PrunaSigningProperties=D:/private/signing.properties" assembleRelease lintRelease
+~~~
 
-只自动提交能够确认金额为零的订单。已拥有结论来自官方库存、权限或对应的官方商品页；同步失败、缺失商品标识和缓存缺项不会被当成“未拥有”。接口无法确认某一商品时，先只读核实官网，确认未拥有后才允许领取。
+Windows 路径含撇号时，JDK 的测试参数文件可能无法解析类路径。可复制工程到不含特殊字符的目录执行构建，保留原目录和 Git 历史。
+
+| 位置 | 职责 |
+| --- | --- |
+| MainActivity.kt | 生命周期、系统边距、原生视图与官方浏览器接线 |
+| ui/PocketViewModel.kt、PocketUiState.kt | 页面状态和明确的用户动作 |
+| ui/NativePocketView.kt、各 Panel/Adapter | 原生目录、详情、账号和历史 |
+| claim/ClaimCoordinator.kt | 领取队列、账号绑定、核实与恢复 |
+| ClaimJournal.kt | 按账号绑定的账本及一次性操作许可 |
+| model/、domain/ | 商品模型、活动时间、资格与拥有规则 |
+| data/ | 兼容旧缓存/账本，HTTP与授权接口的异步边界 |
+| web/OfficialBrowserController.kt | 官方网页、来源/nonce校验、脚本和网络提示 |
+| EpicSession.kt、EpicEntitlements.kt | KeyStore加密授权及官方拥有凭证 |
+| OfficialImages.kt、ui/NativeImageLoader.kt | 官方节点限制、缓存、异步解码与复用 |
+| app/src/main/assets/{domain,automation}.js | 必须在官方会话运行的网站适配、零元结算保护 |
+| tests/legacy-web/ | 旧网页界面与历史测试，仅作回归对照，不打入APK |
+
+新依赖限于原生列表、生命周期、ViewModel与协程；没有加入Compose、Hilt、Room、通用网络库或字体包。品牌与组件规范见 [DESIGN.md](DESIGN.md)，原图和来源见 [品牌说明](docs/BRANDING.md)。
+
+## 历史正式版
+
+[公开 Releases](https://github.com/rUN114/runa-free-pocket/releases/latest) 仍对应旧版，不能把其APK当作本分支原生版。
 
 ## 1.0.0 验证范围
 
@@ -45,28 +70,6 @@ APK SHA-256：
 
 本次账号已经领完，**1.0.0 没有完成新的“未拥有→下单→入库”实测**。0.3.2 曾完成三类真实新增领取；本版沿用其网页结算规则，新增了任务记录和操作前的持久化许可。新增队列、金额拒绝与恢复行为通过独立测试；本机模拟页面的结果不算真实订单。用户自己的手机尚未连接验收。
 
-## 开发与构建
-
-用 Android Studio 打开本目录。需要 JDK 17+、Android SDK Platform 35、Build Tools 36，附 Gradle 9.8.2 Wrapper（固定官方发行包 SHA256）。
-
-```powershell
-# local.properties 配置自己的 SDK，例如 sdk.dir=D\:/Android/Sdk
-./gradlew.bat assembleDebug testReleaseUnitTest
-./tests/run-tests.ps1
-```
-
-Windows 用户名含撇号等特殊字符时，Gradle 测试进程无法从这类路径启动（测试类路径经由 JDK 参数文件传递，特殊字符会破坏解析）；此时把工程复制到不含特殊字符的目录再运行上述检查。
-
-正式签名资料放在仓库外，参照 [测试与签名说明](docs/TESTING.md) 配置自己的密钥：
-
-```powershell
-./gradlew.bat "-PrunaSigningProperties=D:/private/signing.properties" assembleRelease lintRelease
-```
-
-主要文件：`MainActivity.kt` 管理安卓界面和队列；`ClaimJournal.kt` 保存按账号绑定的进度和未确认操作；`EpicSession.kt`、`EpicEntitlements.kt` 读取授权与库存；`OfficialImages.kt` 处理官方图片下载和缓存；`domain.js`、`automation.js`、`ui.js` 分别处理规则、官方网页和界面。原生代码已全部使用 Kotlin（AGP 9 内置 Kotlin 编译，无需额外插件）。
-
-旧版本标签保留。`v0.1.0`、`v0.2.0`、`v0.3.0` 是从旧源码包补录的快照，之后为正常开发提交，详见 CHANGELOG。原始视觉资源保留于 `design/brand-source/`，不打入 APK；处理方式见 [品牌资源说明](docs/BRANDING.md)。
-
 ## 许可
 
-工程代码采用 [GNU AGPL v3](LICENSE)，第三方组件保留各自许可，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。商城图片属于相应权利人。本项目与 Epic Games、Fab 无隶属关系。
+工程代码采用 [GNU AGPL v3](LICENSE)，第三方组件保留各自许可。商城图片属于相应权利人。runa名称与Logo由项目拥有者提供，本项目与Epic Games、Fab无隶属关系。
