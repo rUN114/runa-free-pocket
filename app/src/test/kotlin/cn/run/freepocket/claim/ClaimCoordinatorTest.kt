@@ -46,7 +46,44 @@ class ClaimCoordinatorTest {
         assertFalse(fixture.coordinator.busy)
         assertNull(fixture.browser)
         assertTrue(fixture.coordinator.message.contains("无法保存"))
+        assertEquals("pending", fixture.backend.journal.entry(KEY)!!.getString("status"))
+        assertEquals("paused", fixture.backend.journal.current()!!.getString("state"))
+        fixture.coordinator.close()
+    }
+
+    @Test fun storageRecoveryCanRetryAnActionWhosePermissionWasNeverSent() = runTest {
+        val fixture = Fixture(this)
+        fixture.beginClaim()
+        fixture.backend.canSave = false
+        val replies = mutableListOf<JSONObject>()
+        fixture.coordinator.onWebMessage(fixture.actionReady(), STORE, true, replies::add)
+        assertTrue(replies.isEmpty())
+        fixture.backend.canSave = true
+        fixture.coordinator.command(JSONObject().put("action", "resumeBatch"))
+        runCurrent()
+        assertEquals("claim", fixture.browser?.mode)
+        fixture.coordinator.onWebMessage(fixture.actionReady(), STORE, true, replies::add)
+        assertEquals("product", replies.single().getString("stage"))
+        fixture.coordinator.close()
+    }
+
+    @Test fun failedSubmitCheckpointCannotUndoPreviouslyGrantedProductPermission() = runTest {
+        val fixture = Fixture(this)
+        fixture.beginClaim()
+        val replies = mutableListOf<JSONObject>()
+        fixture.coordinator.onWebMessage(fixture.actionReady(), STORE, true, replies::add)
+        fixture.backend.canSave = false
+        fixture.coordinator.onWebMessage(fixture.actionReady().put("stage", "submit"),
+            "https://www.epicgames.com", false, replies::add)
+        assertEquals(1, replies.size)
         assertEquals("uncertain", fixture.backend.journal.entry(KEY)!!.getString("status"))
+        assertTrue(fixture.backend.journal.entry(KEY)!!.getBoolean("productAuthorized"))
+        assertFalse(fixture.backend.journal.entry(KEY)!!.optBoolean("submitAuthorized"))
+        fixture.backend.canSave = true
+        fixture.coordinator.command(JSONObject().put("action", "resumeBatch"))
+        runCurrent()
+        assertFalse(fixture.browser?.mode == "claim")
+        assertEquals(1, replies.size)
         fixture.coordinator.close()
     }
 

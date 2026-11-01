@@ -6,6 +6,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BrowserPagePolicyTest {
+    @Test fun initialRequestsRequireExactOfficialHttpsOrigin() {
+        for (host in listOf("store.epicgames.com", "www.epicgames.com", "www.fab.com")) {
+            assertTrue(BrowserPagePolicy.canStartRequest("https://$host/path"))
+            assertTrue(BrowserPagePolicy.canStartRequest("https://${host}:443/path"))
+        }
+        for (url in listOf("https://example.com", "https://www.fab.com.evil.test",
+            "https://user:secret@www.fab.com/", "https://www.fab.com:444/",
+            "http://www.fab.com/", "https:", "not a url")) {
+            assertFalse(url, BrowserPagePolicy.canStartRequest(url))
+        }
+        assertTrue(BrowserPagePolicy.canNavigate("https://external-payment.example/path"))
+    }
     @Test fun allowsHttpsNavigationButRejectsLocalAndExecutableSchemes() {
         assertTrue(BrowserPagePolicy.canNavigate("https://www.epicgames.com/id/login?code=secret"))
         for (url in listOf("http://www.fab.com/", "file:///sdcard/token", "content://accounts/1",

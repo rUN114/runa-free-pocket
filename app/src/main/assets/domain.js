@@ -43,6 +43,7 @@
   function plainText(value) {
     return typeof value === 'string' ? value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000) : '';
   }
+  // Legacy Web-UI regression oracle. Native production PC discovery uses CatalogRules.parsePc.
   function parsePc(data, now = Date.now()) {
     const items = array(data?.data?.Catalog?.searchStore?.elements, 'Epic 活动');
     return items.flatMap(item => {
@@ -109,6 +110,7 @@
     return {cover: images[0] || '', screenshots: [...new Set(images)],
       description: plainText(listing.description), publisher: listing.user?.sellerName || '', originalPrice: ''};
   }
+  // Legacy Web-UI oracle; current native inventory decisions use CatalogRules.applyOwnership.
   function applyOwnership(items, snapshot, fresh = true, category = null) {
     if (!snapshot?.accountId || !Number.isFinite(snapshot.checkedAt)) throw new Error('账号库存身份或同步时间缺失');
     const owned = new Set(array(snapshot.owned, '账号库存').map(entry => entry.namespace + ':' + entry.id));
@@ -155,6 +157,7 @@
     if (amount === null) return 'unreadable';
     return amount === 0 ? 'zero' : 'nonzero';
   }
+  // Legacy tri-state wrapper retained for regression tests; checkout adapter calls totalState.
   function zeroTotal(text, productTitle = '') {
     const state = totalState(text, productTitle);
     if (state === 'zero') return true;
@@ -173,7 +176,7 @@
     const lines = String(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const freeCard = /This is free\. Add it to your library to get started\.|这是免费的[。.]\s*将其添加到您的游戏库即可开始[。.]|此内容免费[。.]\s*添加到游戏库即可开始[。.]/i;
     if (!freeCard.test(lines.join(' '))) return null;
-    // An existing total must be handled by zeroTotal, never bypassed by the free-card layout.
+    // An existing total must be handled by totalState, never bypassed by the free-card layout.
     if (lines.some(line => /^(?:(?:order|grand)\s+)?(?:total\b|总计|合计|總計)/i.test(line))) return null;
     const prices = lines.filter(line => /\b(?:USD|EUR|GBP|CNY|HKD|JPY|RMB)\b|US\$|HK\$|CN¥|[$€£¥￥]/i.test(line));
     if (prices.length !== 1) return null;

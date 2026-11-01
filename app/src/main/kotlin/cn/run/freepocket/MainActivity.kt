@@ -46,7 +46,8 @@ class MainActivity : ComponentActivity() {
                     reply(permit)
                 }
             }, onBack = model::browserBack, onRetry = model::browserRetry,
-            onSkip = model::browserSkip, onNavigation = model::navigation)
+            onSkip = model::browserSkip, onNavigation = model::navigation,
+            onFailure = model::browserFailed)
         val root = FrameLayout(this)
         root.setBackgroundColor(getColor(R.color.native_background))
         root.addView(nativeUi.view, FrameLayout.LayoutParams(-1, -1))

@@ -14,11 +14,13 @@ import java.util.Locale
 
 internal class AccountPanel(private val binding: NativePanelBinding, private val onAction: (PocketAction) -> Unit) {
     private var rendered: PocketUiState? = null
+    private var countryInput: EditText? = null
 
     fun render(state: PocketUiState) {
         val previous = rendered
         if (previous != null && previous.epic == state.epic && previous.fab == state.fab && previous.busy == state.busy &&
             previous.country == state.country && previous.fabTier == state.fabTier) return
+        val countryDraft = if (previous != null && previous.country == state.country) countryInput?.text?.toString() else null
         rendered = state
         val context = binding.root.context
         binding.title.setText(R.string.native_accounts_title)
@@ -28,7 +30,7 @@ internal class AccountPanel(private val binding: NativePanelBinding, private val
             account(state.fab, Category.FAB, R.string.native_fab_account, state.busy)
             addText(context.getString(R.string.native_country), heading = true)
             val country = EditText(context).apply {
-                setText(state.country)
+                setText(countryDraft ?: state.country)
                 hint = context.getString(R.string.native_country_hint)
                 contentDescription = context.getString(R.string.native_country)
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
@@ -36,6 +38,7 @@ internal class AccountPanel(private val binding: NativePanelBinding, private val
                 minHeight = context.dp(48)
                 isEnabled = !state.busy
             }
+            countryInput = country
             addView(country, LinearLayout.LayoutParams(-1, -2))
             addAction(context.getString(R.string.native_save_country), !state.busy) {
                 val value = country.text.toString().trim().uppercase(Locale.ROOT)

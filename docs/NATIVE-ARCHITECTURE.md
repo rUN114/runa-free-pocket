@@ -12,19 +12,19 @@ AndroidPocketBackend封装SharedPreferences、EpicSession和HTTP的异步边界�
 
 ## 领取编排
 
-ClaimCoordinator拥有队列和当前任务，不持有Activity或View。每次网页任务有新的nonce；旧回调不影响新任务。ClaimJournal在主机许可回复前同步保存操作预约，写入失败不会给网页授权。
+ClaimCoordinator拥有队列和当前任务，不持有Activity或View。每次网页任务有新的nonce；旧回调不影响新任务。ClaimJournal在主机许可回复前同步保存操作预约，写入失败不会给网页授权。reserve返回仅在未回复许可时可回滚的检查点；失败只回退该阶段并暂停，恢复存储后先保存回退状态。此前已发出的product预约不会随submit写入失败撤销。next以迭代泵推进，避免同步失败递归。
 
 账号、地区、许可档位与原任务不符时拒绝重放；可能已提交的订单只进行拥有核实。返回、跳过、读请求重试和领取提交分别处理，不用自动重试订单解决网络故障。
 
-网页初始标题通过BrowserRequest传递，不被当作网页响应。真实waiting/error等状态才取消通用读取截止提醒，避免初始状态把40秒提示关闭。
+网页初始标题通过BrowserRequest传递，不被当作网页响应。40秒读取提醒独立于waiting/error更新；达到截止时追加提醒，保留具体提示，不自动终止验证或结算。BrowserReadStatus负责该状态。
 
 ## 原生UI
 
-NativePocketView组合目录、详情、账号和历史面板。CatalogAdapter复用卡片；NativeImageLoader在IO线程下载、解码，取消已复用视图的任务，并以绑定标记避免错图。沿用OfficialImages的官方主机限制、缓存与中国CDN跳转规则。
+NativePocketView组合目录、详情、账号和历史面板。CatalogAdapter以DiffUtil复用并更新实际变化的卡片；NativeImageLoader在IO线程下载、解码，取消已复用视图的任务，并以绑定标记避免错图。下载/解码最多2并发，内存缓存不超过16MiB并按可用堆调整。沿用OfficialImages的官方主机限制、磁盘缓存与中国CDN跳转规则。
 
 页面通过PocketAction表达用户意图，控件不直接写账本或发送订单请求。详情和官网按钮不等于领取。已拥有、预告、已结束、缓存未确认及处理中状态由规则约束选择。
 
-OfficialBrowserController仅管理官方网页、脚本、来源受限消息、网络提示和会话清理。id相同的脚本替换不导航，供Fab在product许可后更新后续iframe脚本；新id销毁旧页并使旧回复失效。MainActivity在许可回复前同步安装新的脚本。
+OfficialBrowserController仅管理官方网页、脚本、来源受限消息、网络提示和会话清理。初始请求仅允许三处官方HTTPS来源及默认端口，坏地址通过当前请求id报告失败；网页内部HTTPS导航继续保留。id相同的脚本替换不导航，供Fab在product许可后更新后续iframe脚本；新id销毁旧页并使旧回复失效。MainActivity在许可回复前同步安装新的脚本。
 
 ## 数据与账号兼容
 

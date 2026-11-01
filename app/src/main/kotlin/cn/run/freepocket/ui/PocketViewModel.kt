@@ -182,6 +182,9 @@ internal class PocketViewModel(application: Application) : AndroidViewModel(appl
     }
     fun webMessage(data: JSONObject, origin: String, main: Boolean, reply: (JSONObject) -> Unit) = coordinator?.onWebMessage(data, origin, main, reply)
     fun navigation(url: String) { coordinator?.onNavigation(url) }
+    fun browserFailed(id: String, reason: String) {
+        if (mutableBrowser.value?.id == id) coordinator?.browserFailed(reason)
+    }
     fun browserBack() { coordinator?.back() }
     fun browserRetry() { coordinator?.retry() }
     fun browserSkip() { coordinator?.skip() }

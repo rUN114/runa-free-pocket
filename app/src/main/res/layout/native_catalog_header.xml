@@ -8,7 +8,7 @@
     </LinearLayout>
     <TextView android:id="@+id/updated" style="@style/native_body" android:paddingTop="8dp" />
     <TextView android:id="@+id/message" style="@style/native_body" android:accessibilityLiveRegion="polite" android:paddingVertical="8dp" />
-    <TextView android:id="@+id/journal_error" style="@style/native_body" android:textColor="@color/native_error" android:paddingVertical="8dp" />
+    <TextView android:id="@+id/journal_error" android:accessibilityLiveRegion="polite" style="@style/native_body" android:textColor="@color/native_error" android:paddingVertical="8dp" />
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content">
         <Button android:id="@+id/refresh" style="@style/native_button" android:layout_width="0dp" android:layout_weight="1" android:text="@string/native_refresh" />
         <Button android:id="@+id/sync" style="@style/native_button" android:layout_width="0dp" android:layout_weight="1" android:layout_marginStart="8dp" android:text="@string/native_sync" />

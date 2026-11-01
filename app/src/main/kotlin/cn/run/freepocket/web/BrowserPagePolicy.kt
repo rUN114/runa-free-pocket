@@ -1,9 +1,22 @@
 package cn.run.freepocket.web
 
+import cn.run.freepocket.StoreMessagePolicy
 import java.net.URI
 import java.net.URISyntaxException
 
 internal object BrowserPagePolicy {
+    fun canStartRequest(url: String): Boolean {
+        val uri = try {
+            URI(url)
+        } catch (_: URISyntaxException) {
+            return false
+        }
+        if (!uri.scheme.equals("https", ignoreCase = true) || uri.rawUserInfo != null ||
+            uri.port !in setOf(-1, 443)) return false
+        val host = uri.host?.lowercase() ?: return false
+        return "https://$host" in StoreMessagePolicy.origins
+    }
+
     fun canNavigate(url: String): Boolean {
         val uri = try {
             URI(url)

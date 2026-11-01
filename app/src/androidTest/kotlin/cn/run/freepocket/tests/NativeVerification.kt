@@ -55,6 +55,11 @@ class NativeVerification : Instrumentation() {
                 "fixture" -> fixture()
                 "browserFixture" -> browserFixture()
                 "timeoutFixture" -> timeoutFixture()
+                "uiReview" -> NativeUiReviewChecks.run(this, launch(true))
+                "recoverySeed" -> NativeDeviceRecoveryChecks.seed(this)
+                "recoveryResume" -> NativeDeviceRecoveryChecks.recover(this)
+                "commitPerformance" -> NativeDeviceRecoveryChecks.performance(this)
+                "browserErrors" -> browserErrors()
                 else -> error("Unknown mode")
             }
             result.putString("verification", "passed: " + args.getString("mode", "inspect"))
@@ -199,7 +204,7 @@ class NativeVerification : Instrumentation() {
             browser=OfficialBrowserController(host,{ data,_,_,_->
                 messageCount++
                 markers.add(data.optString("marker"))
-            },{}, {}, {},{})
+            },{}, {}, {},{}, { _, reason -> error(reason) })
             host.setContentView(browser.view)
             browser.show(BrowserRequest("fixture-nonce","https://store.epicgames.com/p/fixture","本机浏览器诊断",
                 Category.PC,"check",1,1,autoRetryAllowed=false))
@@ -253,7 +258,7 @@ class NativeVerification : Instrumentation() {
         val host=launch(true)
         lateinit var browser:OfficialBrowserController
         onMain {
-            browser=OfficialBrowserController(host,{_,_,_,_->},{},{},{},{})
+            browser=OfficialBrowserController(host,{_,_,_,_->},{},{},{},{}, { _, reason -> error(reason) })
             host.setContentView(browser.view)
             browser.show(BrowserRequest("timeout-fixture","https://store.epicgames.com/empty-fixture","读取诊断",
                 Category.ANDROID,"discover",1,1,autoRetryAllowed=false))
@@ -265,10 +270,54 @@ class NativeVerification : Instrumentation() {
             }
             web.loadUrl("https://store.epicgames.com/empty-fixture")
         }
-        await(43000,"Silent official-page adapter did not produce read timeout") {
-            onMain { views(browser.view).filterIsInstance<TextView>().any { it.text.toString().startsWith("网页读取超时") } }
+        val started = SystemClock.uptimeMillis()
+        var notices = 0
+        await(43000,"Progress messages cancelled the read reminder") {
+            if ((SystemClock.uptimeMillis() - started) / 5000 > notices) {
+                notices++
+                onMain { browser.setStatus("请继续完成官网验证 · $notices") }
+            }
+            onMain { views(browser.view).filterIsInstance<TextView>().any {
+                it.text.toString().contains("读取已超过40秒") && it.text.toString().contains("官网验证")
+            } }
         }
+        onMain { browser.setStatus("读取仍在等待用户处理") }
+        check(onMain { views(browser.view).filterIsInstance<TextView>().any {
+            it.text.toString().contains("读取已超过40秒") && it.text.toString().contains("仍在等待")
+        } })
         write("timeout-fixture.json",JSONObject().put("fixtureOnly",true).put("readTimeoutVisible",true).put("ordersRequested",0).toString())
+        onMain { browser.close(); host.finish() }
+    }
+
+    private fun browserErrors() {
+        val host = launch(true)
+        val failures = mutableListOf<String>()
+        lateinit var browser: OfficialBrowserController
+        onMain {
+            browser = OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {},
+                { id, message -> failures.add(id); check(!message.contains("private-marker")) })
+            host.setContentView(browser.view)
+            for (url in listOf("https://example.org/private-marker", "http://www.fab.com/private-marker",
+                "https://www.fab.com/%private-marker", "https://user@www.fab.com/private-marker")) {
+                browser.show(BrowserRequest("invalid-$url",url,"本机诊断",Category.FAB,"auth",1,1,autoRetryAllowed=false))
+                check(views(browser.view).none { it is WebView }) { "Rejected URL created a page" }
+            }
+            check(failures.size == 4)
+            browser.show(BrowserRequest("network-error","https://www.fab.com/login","连接诊断",
+                Category.FAB,"auth",1,1,autoRetryAllowed=false))
+            val web = views(browser.view).filterIsInstance<WebView>().single()
+            web.stopLoading()
+            web.loadUrl("https://www.fab.com:1/login?state=private-marker")
+        }
+        await(20000,"Native WebView error was not displayed") {
+            onMain { views(browser.view).filterIsInstance<TextView>().any { it.text.toString().startsWith("页面加载失败") } }
+        }
+        val text = onMain { views(browser.view).filterIsInstance<TextView>().first {
+            it.text.toString().startsWith("页面加载失败")
+        }.text.toString() }
+        check(text.contains("www.fab.com") && !text.contains("private-marker") && !text.contains("?state"))
+        write("browser-errors.json",JSONObject().put("fixtureOnly",true).put("badRequestsRejected",failures.size)
+            .put("networkErrorRedacted",true).put("ordersRequested",0).toString())
         onMain { browser.close(); host.finish() }
     }
 
