@@ -19,7 +19,7 @@
 
 官方页面按钮文案集中为 `PocketDomain.labels`（按领取/已拥有/不可用/提交订单分组），`automation.js` 只引用不改写；词汇契约由共享样本测试断言。
 
-离线样本只能发现回归，发现不了官网改版。`python tests/upstream/probe.py` 只读请求三个公开端点，仅校验解析器依赖的响应结构，不发 Cookie、账号数据或订单；Fab 无会话 401/403 视为存活不判失败。GitHub Actions（`.github/workflows/tests.yml`）在推送时跑 JS+JVM 测试，每周一定时与手动触发时跑上游探针。探针失败说明上游结构变化，需要先更新样本与适配器再合并。
+离线样本只能发现回归，发现不了官网改版。`python tests/upstream/probe.py` 只读请求三个公开端点，仅校验解析器依赖的响应结构，不发 Cookie、账号数据或订单；Fab 无会话 401/403 视为存活不判失败。探针自身的异常样本测试在 `tests/upstream/test_probe.py`（复现"freeGame 缺 offers""purchase 退化为字符串"曾漏报的两类场景），与设备脚本摘要测试一起随 `run-tests.ps1` 执行。GitHub Actions（`.github/workflows/tests.yml`）在推送时跑 JS+JVM 测试，每周一定时与手动触发时跑上游探针；注意 GitHub 的 schedule 只在默认分支生效，默认分支上另行放置了仅含探针的最小工作流。探针失败说明上游结构变化，需要先更新样本与适配器再合并。
 
 领取状态机的许可生命周期与三条不变量见 [CLAIM-STATE-MACHINE.md](CLAIM-STATE-MACHINE.md)。
 
