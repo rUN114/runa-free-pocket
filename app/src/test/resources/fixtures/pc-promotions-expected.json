@@ -1,0 +1,22 @@
+{
+  "now": "2026-10-16T12:00:00Z",
+  "items": [
+    {
+      "key": "pc:ns-alpha:offer-alpha",
+      "title": "Sample Game Alpha",
+      "availability": "active",
+      "url": "https://store.epicgames.com/en-US/p/sample-alpha",
+      "cover": "https://cdn1.epicgames.com/epic/offer/alpha-wide.png",
+      "catalogItems": [{"namespace": "ns-alpha", "id": "ent-alpha"}]
+    },
+    {
+      "key": "pc:ns-beta:offer-beta",
+      "title": "Sample Game Beta",
+      "availability": "upcoming",
+      "url": "https://store.epicgames.com/en-US/p/sample-beta",
+      "cover": "",
+      "catalogItems": [{"namespace": "ns-beta", "id": "ent-beta"}]
+    }
+  ],
+  "excludedTitles": ["Sample Game Paid", "Sample Game Partial", "Sample Game Expired"]
+}

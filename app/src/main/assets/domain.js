@@ -204,7 +204,23 @@
     if (personal === professional) return "";
     return personal ? "personal" : "professional";
   }
-  const api = {fabTier, parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, availabilityAt, totalState, zeroTotal, zeroFreeCheckout, fabCheckoutTier, queue};
+  // Official-page button vocabulary, grouped by claim intent so each stage has one place to extend.
+  // claim/owned/wishlistAnchor/fabBuy/submitOrder/receiptDone/continueBrowsing/viewInLibrary are
+  // exact-match controls; unavailable is a substring guard; receiptAllYours/receiptThanks are markers.
+  const labels = {
+    claim: /^(get|获取|领取)$/i,
+    owned: /^(in library|owned|已在库中|已拥有)$/i,
+    unavailable: /buy|购买|unavailable|不可用|即将|coming/i,
+    wishlistAnchor: /^(wishlist|add to wishlist|加入愿望单|添加至愿望单|願望清單)$/i,
+    fabBuy: /^(buy now|立即购买)$/i,
+    submitOrder: /^(place order|add to library|下单|下订单|加入库|添加到库)$/i,
+    viewInLibrary: /^view in my library$/i,
+    receiptDone: /^(thank you[!.]?|thanks for (your purchase|buying)[!.]?|order complete[!.]?|感谢购买[！!]?|订单完成[！!]?)$/i,
+    receiptAllYours: /\bit['’]s all yours\b/i,
+    receiptThanks: /thanks for your order[.!]?/i,
+    continueBrowsing: /^continue browsing$/i
+  };
+  const api = {fabTier, labels, parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, availabilityAt, totalState, zeroTotal, zeroFreeCheckout, fabCheckoutTier, queue};
   if (typeof module !== 'undefined') module.exports = api;
   root.PocketDomain = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -163,4 +163,40 @@ class CatalogRulesTest {
         assertEquals("account-b", result.ownershipAccount)
         assertFalse(result.cached)
     }
+
+    /**
+     * The fixture under app/src/test/resources/fixtures is the single sample shared with
+     * tests/shared-fixture.test.cjs (PocketDomain.parsePc). Its dates are strict ISO-8601
+     * UTC so Instant.parse and JS Date.parse agree; epoch-ms stays a cache-boundary concern.
+     */
+    @Test fun sharedFixtureKeepsKotlinAndJavaScriptParsersInAgreement() {
+        val expected = JSONObject(readResource("fixtures/pc-promotions-expected.json"))
+        val data = JSONObject(readResource("fixtures/pc-promotions.json"))
+        val now = Instant.parse(expected.getString("now")).toEpochMilli()
+        val items = CatalogRules.parsePc(data, now)
+        val wanted = expected.getJSONArray("items")
+        assertEquals(wanted.length(), items.size)
+        for (index in 0 until wanted.length()) {
+            val want = wanted.getJSONObject(index)
+            val got = items[index]
+            val label = want.getString("key")
+            assertEquals(label, want.getString("key"), got.key)
+            assertEquals(label, want.getString("title"), got.title)
+            assertEquals(label, want.getString("availability"), got.availability.wire)
+            assertEquals(label, want.getString("url"), got.url)
+            assertEquals(label, want.getString("cover"), got.cover)
+            val identities = want.getJSONArray("catalogItems")
+            assertEquals(want.getString("key"), identities.length(), got.catalogItems.size)
+            for (i in 0 until identities.length()) {
+                assertEquals(label, identities.getJSONObject(i).getString("namespace"), got.catalogItems[i].namespace)
+                assertEquals(label, identities.getJSONObject(i).getString("id"), got.catalogItems[i].id)
+            }
+        }
+        val excluded = expected.getJSONArray("excludedTitles")
+        for (i in 0 until excluded.length())
+            assertTrue(excluded.getString(i), items.none { it.title == excluded.getString(i) })
+    }
+
+    private fun readResource(name: String): String =
+        javaClass.classLoader.getResourceAsStream(name)!!.readBytes().toString(Charsets.UTF_8)
 }

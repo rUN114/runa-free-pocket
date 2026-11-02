@@ -6,12 +6,22 @@
 
 ## 常规检查
 
-需要 JDK 17+ 和 Android SDK 35。`tests/run-tests.ps1` 执行 JavaScript 检查，拥有凭证分页检查在 Gradle 单元测试中；Gradle 默认的单元测试变体为 Release。
+需要 JDK 17+ 和 Android SDK 35。`tests/run-tests.ps1` 执行 JavaScript 检查，拥有凭证分页检查在 Gradle 单元测试中；Gradle 默认的单元测试变体为 Release。本机命令行构建需 `GRADLE_USER_HOME=D:\Android\Gradle`（默认用户目录的 9.8.2 发行包不完整）。
 
 ```powershell
 ./tests/run-tests.ps1
 ./gradlew.bat testReleaseUnitTest lintRelease
 ```
+
+## 共享样本与上游探针（2026-11-02）
+
+`app/src/test/resources/fixtures/pc-promotions.json` 是 JS 与 Kotlin 两个 PC 解析器共用的唯一样本（结构对齐 Epic 活动接口真实字段；本机当前网络受限，未抓取当日真实响应，日期统一为严格 ISO-8601 UTC，历元毫秒只属于缓存边界）。两侧消费方分别是 `tests/shared-fixture.test.cjs` 和 `CatalogRulesTest.sharedFixtureKeepsKotlinAndJavaScriptParsersInAgreement`；改任一解析器时两边同时验证，防止漂移。
+
+官方页面按钮文案集中为 `PocketDomain.labels`（按领取/已拥有/不可用/提交订单分组），`automation.js` 只引用不改写；词汇契约由共享样本测试断言。
+
+离线样本只能发现回归，发现不了官网改版。`python tests/upstream/probe.py` 只读请求三个公开端点，仅校验解析器依赖的响应结构，不发 Cookie、账号数据或订单；Fab 无会话 401/403 视为存活不判失败。GitHub Actions（`.github/workflows/tests.yml`）在推送时跑 JS+JVM 测试，每周一定时与手动触发时跑上游探针。探针失败说明上游结构变化，需要先更新样本与适配器再合并。
+
+领取状态机的许可生命周期与三条不变量见 [CLAIM-STATE-MACHINE.md](CLAIM-STATE-MACHINE.md)。
 
 浏览器界面测试使用可选的 Playwright 1.62.1 与已安装的 Edge，不调用官方领取接口，数据明确为示例。
 

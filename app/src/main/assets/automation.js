@@ -125,7 +125,7 @@ function runPocketTask(task) {
     const h1 = scope.querySelector('h1');
     let parent = h1.parentElement;
     for (let depth = 0; parent && parent !== scope && depth < 5; depth++, parent = parent.parentElement) {
-      const candidates = buttons(parent).filter(b => /^(get|in library|owned|获取|领取|已在库中|已拥有)$/i.test(label(b)));
+      const candidates = buttons(parent).filter(b => D.labels.claim.test(label(b)) || D.labels.owned.test(label(b)));
       if (candidates.length === 1) return candidates[0];
     }
     // The current mobile layout separates the purchase card from the title header.
@@ -133,8 +133,8 @@ function runPocketTask(task) {
     const actions = new Set();
     for (const section of scope.querySelectorAll('section')) {
       const controls = buttons(section);
-      if (!controls.some(button => /^(wishlist|add to wishlist|加入愿望单|添加至愿望单|願望清單)$/i.test(label(button)))) continue;
-      const candidates = controls.filter(button => /^(get|in library|owned|获取|领取|已在库中|已拥有)$/i.test(label(button)));
+      if (!controls.some(button => D.labels.wishlistAnchor.test(label(button)))) continue;
+      const candidates = controls.filter(button => D.labels.claim.test(label(button)) || D.labels.owned.test(label(button)));
       if (candidates.length === 1) actions.add(candidates[0]);
     }
     return actions.size === 1 ? [...actions][0] : null;
@@ -153,7 +153,7 @@ function runPocketTask(task) {
         // Fab closes its checkout on success and replaces Buy now with this library link.
         // It only requests a fresh acquired-library check; the link does not prove ownership.
         const libraryLink = [...scope.querySelectorAll('a[href]')].find(link => visible(link) &&
-          /^view in my library$/i.test(label(link)) && new URL(link.href, location.href).pathname === '/library');
+          D.labels.viewInLibrary.test(label(link)) && new URL(link.href, location.href).pathname === '/library');
         if (libraryLink) finish('checkoutComplete');
         return;
       }
@@ -162,7 +162,7 @@ function runPocketTask(task) {
       if (task.mode === 'check') { finish('result', {status: 'unowned'}); return; }
       const current = D.parseFab(await json('/i/blades/free_content_blade'));
       if (!current.some(x => x.id === task.item.id)) { finish('result', {status: 'expired', message: '该素材已不在限时免费活动中'}); return; }
-      const buy = buttons(scope).find(b => /^(buy now|立即购买)$/i.test(label(b)));
+      const buy = buttons(scope).find(b => D.labels.fabBuy.test(label(b)));
       const freeLabel = /(?:-100%|100% off)/i.test(scope.innerText) && /\bfree\b|免费/i.test(scope.innerText);
       if (!buy || !freeLabel) { notice('未能确认当前素材免费；请查看官方页面后手动处理'); return; }
       const license = scope.querySelector('#license-select');
@@ -191,9 +191,9 @@ function runPocketTask(task) {
       const cta = epicCta(scope);
       if (!cta) { notice('正在等待商品主按钮；若网页要求登录或验证，请先完成'); return; }
       const text = label(cta);
-      if (/^(in library|owned|已在库中|已拥有)$/i.test(text)) { finish('result', {status: 'owned'}); return; }
-      if (!/^(get|获取|领取)$/i.test(text)) {
-        if (/buy|购买|unavailable|不可用|即将|coming/i.test(text)) finish('result', {status: 'expired', message: '该商品当前无法免费领取'});
+      if (D.labels.owned.test(text)) { finish('result', {status: 'owned'}); return; }
+      if (!D.labels.claim.test(text)) {
+        if (D.labels.unavailable.test(text)) finish('result', {status: 'expired', message: '该商品当前无法免费领取'});
         return;
       }
       if (task.mode === 'check') { finish('result', {status: 'unowned'}); return; }
@@ -211,10 +211,10 @@ function runPocketTask(task) {
     const scope = (inPaymentFrame || inStoreCheckout || inFabCheckout) ? document.body : [...document.querySelectorAll('[role="dialog"], dialog')].find(visible);
     if (!scope) return;
     const heading = [...scope.querySelectorAll('h1,h2,h3')].find(el => visible(el) &&
-      /^(thank you[!.]?|thanks for (your purchase|buying)[!.]?|order complete[!.]?|感谢购买[！!]?|订单完成[！!]?)$/i.test(label(el)));
+      D.labels.receiptDone.test(label(el)));
     const receiptText = scope.innerText.replace(/\s+/g, ' ');
-    const currentReceipt = /\bit['’]s all yours\b/i.test(receiptText) && /thanks for your order[.!]?/i.test(receiptText) &&
-      buttons(scope).some(button => /^continue browsing$/i.test(label(button)));
+    const currentReceipt = D.labels.receiptAllYours.test(receiptText) && D.labels.receiptThanks.test(receiptText) &&
+      buttons(scope).some(button => D.labels.continueBrowsing.test(label(button)));
     if (heading || currentReceipt) { finish('checkoutComplete'); return; }
     if (ordered) return;
     if (task.category === 'fab') {
@@ -225,7 +225,7 @@ function runPocketTask(task) {
         return;
       }
     }
-    const submit = buttons(scope).find(b => /^(place order|add to library|下单|下订单|加入库|添加到库)$/i.test(label(b)));
+    const submit = buttons(scope).find(b => D.labels.submitOrder.test(label(b)));
     if (!submit || submit.disabled) return;
     const totalState = D.totalState(scope.innerText, task.item.title);
     let free = null;
