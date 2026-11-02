@@ -1,4 +1,4 @@
-> 本次评审修复与可复跑设备检查见 [NATIVE-REVIEW-2026-11-01.md](NATIVE-REVIEW-2026-11-01.md) 和 [设备脚本](../tests/device/README.md)。
+> 当前1.1.0的构建、归档及验证边界见[交付记录](DELIVERY-1.1.0.md)；此前设备检查见 [NATIVE-REVIEW-2026-11-01.md](NATIVE-REVIEW-2026-11-01.md) 和 [设备脚本](../tests/device/README.md)。
 
 > 原生版新增验证与设备测试入口见 [NATIVE-VERIFY-2026-11-01.md](NATIVE-VERIFY-2026-11-01.md)。下文历史ReleaseVerification操作仅适用于旧网页界面版本；当前主界面使用NativeVerification debug诊断测试，非调试包通过系统UI自动化检查，避免为测试保留生产类名和方法。
 
@@ -19,7 +19,7 @@
 
 官方页面按钮文案集中为 `PocketDomain.labels`（按领取/已拥有/不可用/提交订单分组），`automation.js` 只引用不改写；词汇契约由共享样本测试断言。
 
-离线样本只能发现回归，发现不了官网改版。`python tests/upstream/probe.py` 只读请求三个公开端点，仅校验解析器依赖的响应结构，不发 Cookie、账号数据或订单；Fab 无会话 401/403 视为存活不判失败。探针自身的异常样本测试在 `tests/upstream/test_probe.py`（复现"freeGame 缺 offers""purchase 退化为字符串"曾漏报的两类场景），与设备脚本摘要测试一起随 `run-tests.ps1` 执行。GitHub Actions（`.github/workflows/tests.yml`）在推送时跑 JS+JVM 测试，每周一定时与手动触发时跑上游探针；注意 GitHub 的 schedule 只在默认分支生效，默认分支上另行放置了仅含探针的最小工作流。探针失败说明上游结构变化，需要先更新样本与适配器再合并。
+离线样本只能发现回归，发现不了官网改版。`python tests/upstream/probe.py` 只读请求三个公开端点，不发Cookie、账号数据或订单；Fab无会话401/403只标记authWall，不代表其内容结构已经验证。13项探针异常样本与2项设备摘要测试随 `run-tests.ps1` 运行；开发分支的 `.github/workflows/tests.yml` 同时运行这些Python测试、JS、JVM、Lint及未签名release构建。每周一21:00 UTC（北京时间周二05:00）在线探针仅由默认分支 `.github/workflows/upstream-probe.yml` 负责，也可手动触发。探针失败需先区分网络/登录限制和数据结构变化，再决定是否更新适配器。
 
 领取状态机的许可生命周期与三条不变量见 [CLAIM-STATE-MACHINE.md](CLAIM-STATE-MACHINE.md)。
 
