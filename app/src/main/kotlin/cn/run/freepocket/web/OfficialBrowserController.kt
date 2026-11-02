@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.webkit.CookieManager
@@ -37,7 +38,8 @@ class OfficialBrowserController(
     private val onBack: () -> Unit,
     private val onRetry: () -> Unit,
     private val onSkip: () -> Unit,
-    private val onNavigation: (String) -> Unit
+    private val onNavigation: (String) -> Unit,
+    private val onFailure: (String, String) -> Unit
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val network = Executors.newSingleThreadExecutor()
@@ -49,9 +51,7 @@ class OfficialBrowserController(
     private var webView: WebView? = null
     private var request: BrowserRequest? = null
     private var scriptHandler: ScriptHandler? = null
-    private var readTimeout: Runnable? = null
-    private var progressText = ""
-    private var readOverdue = false
+    private val readStatus = BrowserReadStatus(activity.getString(R.string.read_timeout))
     private var navigation = 0L
     private var generation = 0L
     private var retried = false
@@ -88,14 +88,22 @@ class OfficialBrowserController(
     }
 
     /** A refreshed script must be installed before replying to Fab's product-stage permit. */
-    fun show(next: BrowserRequest): Boolean {
-        if (closed || clearingSession || !BrowserPagePolicy.canStart(next.url)) return false
+    fun show(next: BrowserRequest) {
+        if (closed || clearingSession) {
+            onFailure(next.id, activity.getString(R.string.browser_unavailable))
+            return
+        }
+        if (!BrowserPagePolicy.canStartRequest(next.url)) {
+            hide()
+            onFailure(next.id, activity.getString(R.string.invalid_official_url))
+            return
+        }
         val previous = request
         if (previous?.id == next.id) {
             if (previous.script != next.script) installScript(webView!!, next.script)
             request = next
             updateTitle(next)
-            return true
+            return
         }
         disposePage(clearCache = false)
         request = next
@@ -105,23 +113,19 @@ class OfficialBrowserController(
         panel.addView(page, LinearLayout.LayoutParams(-1, 0, 1f))
         installScript(page, next.script)
         updateTitle(next)
-        status.text = ""
+        readStatus.start(next.mode, SystemClock.uptimeMillis())
+        status.text = readStatus.text
         address.text = BrowserPagePolicy.displayHost(next.url)
         panel.visibility = View.VISIBLE
         page.loadUrl(next.url)
         if (next.mode in setOf("discover", "syncFab")) {
             val token = generation
             val timeout = Runnable {
-                if (isCurrent(page, next.id, token)) {
-                    readOverdue = true
-                    renderStatus()
-                }
-                readTimeout = null
+                if (isCurrent(page, next.id, token) && readStatus.expire(SystemClock.uptimeMillis()))
+                    status.text = readStatus.text
             }
-            readTimeout = timeout
             handler.postDelayed(timeout, 40000)
         }
-        return true
     }
 
     fun hide() {
@@ -132,16 +136,8 @@ class OfficialBrowserController(
 
     fun setStatus(message: String) {
         if (closed) return
-        progressText = message
-        renderStatus()
-    }
-
-    private fun renderStatus() {
-        status.text = when {
-            !readOverdue -> progressText
-            progressText.isBlank() -> activity.getString(R.string.read_timeout)
-            else -> progressText + "\n" + activity.getString(R.string.read_timeout)
-        }
+        readStatus.update(message)
+        status.text = readStatus.text
     }
 
     /** The owner persists its pending-reset flag before calling this asynchronous cleanup. */
@@ -203,8 +199,8 @@ class OfficialBrowserController(
                 val navigationToken = ++navigation
                 address.text = BrowserPagePolicy.displayHost(url)
                 handler.postDelayed({
-                    if (isCurrent(page, id, token) && navigation == navigationToken && page.progress < 100)
-                        status.setText(R.string.page_load_slow)
+                    if (isCurrent(page, id, token) && navigation == navigationToken && page.progress < 100 && readStatus.text.isEmpty())
+                        setStatus(activity.getString(R.string.page_load_slow))
                 }, 45000)
                 onNavigation(url)
             }
@@ -216,16 +212,14 @@ class OfficialBrowserController(
             override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                 if (!request.isForMainFrame || !isCurrent(page, id, token)) return
                 navigation++
-                cancelReadTimeout()
-                status.text = activity.getString(R.string.http_page_error, response.statusCode.toString(),
-                    BrowserPagePolicy.displayHost(request.url.toString()))
+                setStatus(activity.getString(R.string.http_page_error, response.statusCode.toString(),
+                    BrowserPagePolicy.displayHost(request.url.toString())))
             }
 
             override fun onReceivedError(view: WebView, failed: WebResourceRequest, error: WebResourceError) {
                 if (!failed.isForMainFrame || !isCurrent(page, id, token)) return
                 val current = request!!
                 navigation++
-                cancelReadTimeout()
                 val phase = when (current.mode) {
                     "auth" -> R.string.phase_login
                     "discover" -> R.string.phase_discover
@@ -234,12 +228,13 @@ class OfficialBrowserController(
                     "check" -> R.string.phase_ownership
                     else -> R.string.phase_browse
                 }
-                status.text = activity.getString(R.string.page_load_error, activity.getString(phase),
+                val errorMessage = activity.getString(R.string.page_load_error, activity.getString(phase),
                     BrowserPagePolicy.displayHost(failed.url.toString()),
                     BrowserPagePolicy.networkCode(error.description.toString(), error.errorCode))
+                setStatus(errorMessage)
                 if (!current.autoRetryAllowed || !BrowserPagePolicy.shouldRetry(current.mode, error.errorCode, retried)) return
                 retried = true
-                status.append(activity.getString(R.string.read_retry_once))
+                setStatus(errorMessage + activity.getString(R.string.read_retry_once))
                 handler.postDelayed({ if (isCurrent(page, id, token)) onRetry() }, 1500)
             }
         }
@@ -281,9 +276,7 @@ class OfficialBrowserController(
         navigation++
         request = null
         handler.removeCallbacksAndMessages(null)
-        readTimeout = null
-        progressText = ""
-        readOverdue = false
+        readStatus.clear()
         diagnosticDialog?.dismiss()
         diagnosticDialog = null
         scriptHandler?.remove()
@@ -297,12 +290,6 @@ class OfficialBrowserController(
             old.clearCache(true)
         }
         old.destroy()
-    }
-
-    private fun cancelReadTimeout() {
-        readTimeout?.let(handler::removeCallbacks)
-        readTimeout = null
-        readOverdue = false
     }
 
     private fun diagnose() {

@@ -44,7 +44,7 @@ def main():
             raise RuntimeError(f'Instrumentation did not pass {mode}')
         adb('pull', f'/sdcard/Android/data/{PACKAGE}/files/native-verification/{artifact}', str(out / artifact))
         data = json.loads((out / artifact).read_text(encoding='utf-8'))
-        if mode in ['recoveryPrepare', 'recoveryResume', 'commitBenchmark']:
+        if mode in ['recoveryPrepare', 'localRecoveryResume', 'commitBenchmark']:
             if data.get('mode') != mode or data.get('passed') is not True:
                 raise RuntimeError('Diagnostic result mode/pass mismatch')
         if data.get('ordersRequested') != 0 or data.get('fixtureOnly') is not True:
@@ -123,7 +123,7 @@ def main():
             adb('shell', 'am', 'force-stop', PACKAGE)
             if adb('shell', 'pidof', PACKAGE, allowed_codes=(0, 1)).strip():
                 raise RuntimeError('External force-stop did not terminate target process')
-            resumed = instrument('recoveryResume', 'recoveryResume.json')
+            resumed = instrument('localRecoveryResume', 'localRecoveryResume.json')
             if prepared['pid'] == resumed['pid'] or prepared['runId'] != resumed['runId'] or prepared['reservations'] != resumed['reservations']:
                 raise RuntimeError('Process/run/reservation recovery mismatch')
             if resumed.get('permissionsGranted') != 0 or resumed.get('readOnlyCheckReached') is not True or 'claim' in resumed['observedModes']:

@@ -25,3 +25,6 @@ storage-state*.json
 # Android Studio 本机项目设置。
 .idea/
 *.iml
+
+# Local Python device-test bytecode.
+__pycache__/

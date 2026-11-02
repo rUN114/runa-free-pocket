@@ -43,6 +43,9 @@ internal class ClaimCoordinator(
     private var reconnectCategory: Category? = null
     private var started = false
     private var closed = false
+    private var advancing = false
+    private var advanceRequested = false
+    private var unissuedRollbackPending = false
     private var completed = 0
     private var total = 0
     private var completionNote = ""
@@ -144,7 +147,17 @@ internal class ClaimCoordinator(
     }
 
     private fun journalAvailable(): Boolean {
-        if (journal != null && backend.journalError.isEmpty()) return true
+        if (journal != null && backend.journalError.isEmpty()) {
+            if (unissuedRollbackPending) {
+                if (!backend.saveJournal()) {
+                    message = "领取进度仍无法保存，未放行新的操作。请释放存储空间后重试。"
+                    publish()
+                    return false
+                }
+                unissuedRollbackPending = false
+            }
+            return true
+        }
         message = backend.journalError.ifEmpty { "领取记录不可用，已停用自动领取。" }
         publish()
         return false
@@ -173,6 +186,20 @@ internal class ClaimCoordinator(
     }
 
     private fun next() {
+        advanceRequested = true
+        if (advancing) return
+        advancing = true
+        try {
+            while (advanceRequested && !closed) {
+                advanceRequested = false
+                advanceOne()
+            }
+        } finally {
+            advancing = false
+        }
+    }
+
+    private fun advanceOne() {
         cancelPendingVerification()
         onBrowserChanged(null)
         active = tasks.poll()
@@ -477,13 +504,20 @@ internal class ClaimCoordinator(
                 journal!!.entry(item.key)!!.put("selectedFabTier", task.fabTier)
             } else if (!task.fabTierVerified) { fail("未取得本次商品页许可确认，未提交订单。"); return }
         }
-        val saved = try {
-            journal!!.reserveAndSave(item.key, stage, backend::saveJournal)
-        } catch (_: JSONException) {
+        val checkpoint = try { journal!!.reserve(item.key, stage) } catch (_: JSONException) {
             fail("此项目存在待核实操作或重复请求，请先在领取记录中核实。")
             return
         }
-        if (!saved) { journalSaveFailed(); return }
+        if (!backend.saveJournal()) {
+            // No permission has left the host. Undo only this stage, never an earlier issued one.
+            journal!!.rollbackUnissued(checkpoint)
+            journal!!.pause("保存进度失败，本次操作未获许可；恢复存储后可继续")
+            unissuedRollbackPending = true
+            clearWork()
+            message = "无法保存领取进度，未放行本次操作。请释放存储空间后继续任务。"
+            publish()
+            return
+        }
         // The host installs this same-nonce script before delivering the permit to the page.
         if (task.category == Category.FAB && stage == "product") showActiveBrowser(task)
         reply(JSONObject().put("fabTierVerified", task.fabTierVerified).put("type", "actionPermit").put("nonce", task.nonce).put("stage", stage))
@@ -545,8 +579,14 @@ internal class ClaimCoordinator(
     }
 
     fun onNavigation(url: String) {
-        val uri = try { URI.create(url) } catch (_: IllegalArgumentException) {
-            active?.fabTierVerified = false
+        val uri = try {
+            URI.create(url)
+        } catch (_: IllegalArgumentException) {
+            val task = active
+            if (task?.category == Category.FAB && task.fabTierVerified) {
+                task.fabTierVerified = false
+                fail("官方导航地址无法识别，已撤销许可确认；请先核实订单结果。")
+            }
             return
         }
         val task = active
@@ -566,6 +606,7 @@ internal class ClaimCoordinator(
     }
 
     fun browserFailed(nonce: String, reason: String) {
+        if (closed || resettingAccount) return
         if (current(nonce)) fail(reason)
         else if (!closed && active == null && manualItem != null) {
             manualItem = null
@@ -648,6 +689,7 @@ internal class ClaimCoordinator(
     }
 
     private fun clearWork() {
+        advanceRequested = false
         cancelPendingVerification()
         lifetime.cancelChildren()
         tasks.clear()

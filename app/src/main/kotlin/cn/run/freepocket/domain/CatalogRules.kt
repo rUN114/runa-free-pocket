@@ -134,6 +134,8 @@ object CatalogRules {
             if (item.category == Category.FAB || item.category != category) return@map item
             val ids = item.catalogItems
             if (ids.isEmpty() || ids.any { it.namespace.isEmpty() || it.id.isEmpty() }) {
+                // Missing identities remain UNKNOWN even after a fresh query: the page must decide.
+                // Unlike the legacy JS spread, cached reflects this query's freshness explicitly.
                 return@map item.copy(status = Ownership.UNKNOWN,
                     statusReason = "该商品暂时无法匹配账号库存，请查看官方商品页面",
                     ownershipAccount = accountId, checkedAt = checkedAt.toLong(), cached = !fresh)

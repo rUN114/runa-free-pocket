@@ -16,8 +16,8 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
-import android.widget.EditText
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
@@ -57,12 +57,17 @@ class NativeVerification : Instrumentation() {
                 "fixture" -> fixture()
                 "browserFixture" -> browserFixture()
                 "timeoutFixture" -> timeoutFixture()
-                "progressTimeoutFixture" -> timeoutFixture(progress = true)
+                "uiReview" -> NativeUiReviewChecks.run(this, launch(true))
+                "recoverySeed" -> NativeDeviceRecoveryChecks.seed(this)
+                "recoveryResume" -> NativeDeviceRecoveryChecks.recover(this)
+                "commitPerformance" -> NativeDeviceRecoveryChecks.performance(this)
+                "browserErrors" -> browserErrors()
+                "progressTimeoutFixture" -> progressTimeoutFixture()
                 "showFailureFixture" -> showFailureFixture()
                 "accountDraftFixture" -> accountDraftFixture()
                 "slowProgressFixture" -> slowProgressFixture()
                 "networkErrorFixture" -> networkErrorFixture()
-                "recoveryPrepare", "recoveryResume", "commitBenchmark" -> recoveryDiagnostic(args.getString("mode")!!)
+                "recoveryPrepare", "localRecoveryResume", "commitBenchmark" -> recoveryDiagnostic(args.getString("mode")!!)
                 else -> error("Unknown mode")
             }
             result.putString("verification", "passed: " + args.getString("mode", "inspect"))
@@ -207,7 +212,7 @@ class NativeVerification : Instrumentation() {
             browser=OfficialBrowserController(host,{ data,_,_,_->
                 messageCount++
                 markers.add(data.optString("marker"))
-            },{}, {}, {},{})
+            },{}, {}, {},{}, { _, reason -> error(reason) })
             host.setContentView(browser.view)
             browser.show(BrowserRequest("fixture-nonce","https://store.epicgames.com/p/fixture","本机浏览器诊断",
                 Category.PC,"check",1,1,autoRetryAllowed=false))
@@ -257,11 +262,11 @@ class NativeVerification : Instrumentation() {
             .put("staleNonceRejected",true).put("updatedScriptInChildFrame",true).put("ordersRequested",0).toString())
     }
 
-    private fun timeoutFixture(progress: Boolean = false) {
+    private fun timeoutFixture() {
         val host=launch(true)
         lateinit var browser:OfficialBrowserController
         onMain {
-            browser=OfficialBrowserController(host,{_,_,_,_->},{},{},{},{})
+            browser=OfficialBrowserController(host,{_,_,_,_->},{},{},{},{}, { _, reason -> error(reason) })
             host.setContentView(browser.view)
             browser.show(BrowserRequest("timeout-fixture","https://store.epicgames.com/empty-fixture","读取诊断",
                 Category.ANDROID,"discover",1,1,autoRetryAllowed=false))
@@ -272,17 +277,83 @@ class NativeVerification : Instrumentation() {
                     WebResourceResponse("text/html","UTF-8",ByteArrayInputStream("<html><body>无响应诊断</body></html>".toByteArray()))
             }
             web.loadUrl("https://store.epicgames.com/empty-fixture")
-            if (progress) browser.setStatus("诊断进度：请完成官网验证")
+        }
+        val started = SystemClock.uptimeMillis()
+        var notices = 0
+        await(43000,"Progress messages cancelled the read reminder") {
+            if ((SystemClock.uptimeMillis() - started) / 5000 > notices) {
+                notices++
+                onMain { browser.setStatus("请继续完成官网验证 · $notices") }
+            }
+            onMain { views(browser.view).filterIsInstance<TextView>().any {
+                it.text.toString().contains("读取已超过40秒") && it.text.toString().contains("官网验证")
+            } }
+        }
+        onMain { browser.setStatus("读取仍在等待用户处理") }
+        check(onMain { views(browser.view).filterIsInstance<TextView>().any {
+            it.text.toString().contains("读取已超过40秒") && it.text.toString().contains("仍在等待")
+        } })
+        write("timeout-fixture.json",JSONObject().put("fixtureOnly",true).put("readTimeoutVisible",true).put("ordersRequested",0).toString())
+        onMain { browser.close(); host.finish() }
+    }
+
+    private fun browserErrors() {
+        val host = launch(true)
+        val failures = mutableListOf<String>()
+        lateinit var browser: OfficialBrowserController
+        onMain {
+            browser = OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {},
+                { id, message -> failures.add(id); check(!message.contains("private-marker")) })
+            host.setContentView(browser.view)
+            for (url in listOf("https://example.org/private-marker", "http://www.fab.com/private-marker",
+                "https://www.fab.com/%private-marker", "https://user@www.fab.com/private-marker")) {
+                browser.show(BrowserRequest("invalid-$url",url,"本机诊断",Category.FAB,"auth",1,1,autoRetryAllowed=false))
+                check(views(browser.view).none { it is WebView }) { "Rejected URL created a page" }
+            }
+            check(failures.size == 4)
+            browser.show(BrowserRequest("network-error","https://www.fab.com/login","连接诊断",
+                Category.FAB,"auth",1,1,autoRetryAllowed=false))
+            val web = views(browser.view).filterIsInstance<WebView>().single()
+            web.stopLoading()
+            web.loadUrl("https://www.fab.com:1/login?state=private-marker")
+        }
+        await(20000,"Native WebView error was not displayed") {
+            onMain { views(browser.view).filterIsInstance<TextView>().any { it.text.toString().startsWith("页面加载失败") } }
+        }
+        val text = onMain { views(browser.view).filterIsInstance<TextView>().first {
+            it.text.toString().startsWith("页面加载失败")
+        }.text.toString() }
+        check(text.contains("www.fab.com") && !text.contains("private-marker") && !text.contains("?state"))
+        write("browser-errors.json",JSONObject().put("fixtureOnly",true).put("badRequestsRejected",failures.size)
+            .put("networkErrorRedacted",true).put("ordersRequested",0).toString())
+        onMain { browser.close(); host.finish() }
+    }
+
+    private fun progressTimeoutFixture() {
+        val host=launch(true)
+        lateinit var browser:OfficialBrowserController
+        onMain {
+            browser=OfficialBrowserController(host,{_,_,_,_->},{},{},{},{}, { _, reason -> error(reason) })
+            host.setContentView(browser.view)
+            browser.show(BrowserRequest("progress-timeout-fixture","https://store.epicgames.com/empty-fixture","读取诊断",
+                Category.ANDROID,"discover",1,1,autoRetryAllowed=false))
+            val web=views(browser.view).filterIsInstance<WebView>().single()
+            web.stopLoading()
+            web.webViewClient=object:WebViewClient() {
+                override fun shouldInterceptRequest(view:WebView,request:WebResourceRequest)=
+                    WebResourceResponse("text/html","UTF-8",ByteArrayInputStream("<html><body>无响应诊断</body></html>".toByteArray()))
+            }
+            web.loadUrl("https://store.epicgames.com/empty-fixture")
+            browser.setStatus("诊断进度：请完成官网验证")
         }
         await(43000,"Official-page adapter did not preserve progress and produce read timeout") {
             onMain { views(browser.view).filterIsInstance<TextView>().any {
                 val text = it.text.toString()
-                text.contains("网页读取超时") && (!progress || text.contains("诊断进度：请完成官网验证"))
+                text.contains("读取已超过40秒") && text.contains("诊断进度：请完成官网验证")
             } }
         }
-        val artifact = if (progress) "progress-timeout-fixture.json" else "timeout-fixture.json"
-        write(artifact,JSONObject().put("fixtureOnly",true).put("readTimeoutVisible",true)
-            .put("progressPreserved", progress).put("ordersRequested",0).toString())
+        write("progress-timeout-fixture.json",JSONObject().put("fixtureOnly",true).put("readTimeoutVisible",true)
+            .put("progressPreserved",true).put("ordersRequested",0).toString())
         onMain { browser.close(); host.finish() }
     }
 
@@ -291,13 +362,13 @@ class NativeVerification : Instrumentation() {
         val releaseBody = CountDownLatch(1)
         var startedAt = 0L
         val intercepted = java.util.concurrent.atomic.AtomicBoolean(false)
-        val browser = onMain { OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {}) }
+        val browser = onMain { OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {}, { _, _ -> }) }
         lateinit var web: WebView
         try {
             onMain {
                 host.setContentView(browser.view)
-                check(browser.show(BrowserRequest("slow-progress-fixture", "https://store.epicgames.com/slow-diagnostic",
-                    "慢页面进度诊断", Category.PC, "discover", 1, 1, autoRetryAllowed = false)))
+                browser.show(BrowserRequest("slow-progress-fixture", "https://store.epicgames.com/slow-diagnostic",
+                    "慢页面进度诊断", Category.PC, "discover", 1, 1, autoRetryAllowed = false))
                 web = views(browser.view).filterIsInstance<WebView>().single()
                 web.stopLoading()
                 val delegate = web.webViewClient
@@ -343,8 +414,8 @@ class NativeVerification : Instrumentation() {
                     .put("elapsedSincePageStartedMs", SystemClock.elapsedRealtime() - startedAt)
                     .put("productionPageStartedDelegated", true).put("intercepted", intercepted.get())
                     .put("progressTextPresent", text.contains("诊断进度：请完成官网验证"))
-                    .put("reminderPresent", text.contains("网页读取超时")).toString())
-                check(text.contains("诊断进度：请完成官网验证") && text.contains("网页读取超时")) {
+                    .put("reminderPresent", text.contains("读取已超过40秒")).toString())
+                check(text.contains("诊断进度：请完成官网验证") && text.contains("读取已超过40秒")) {
                     "45-second slow-page status overwrote progress or overdue reminder"
                 }
                 JSONObject().put("progress", web.progress).put("elapsedSincePageStartedMs", SystemClock.elapsedRealtime() - startedAt)
@@ -390,16 +461,20 @@ class NativeVerification : Instrumentation() {
 
     private fun showFailureFixture() {
         val host = launch(true)
+        val failures = mutableListOf<String>()
         onMain {
-            val browser = OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {})
+            val browser = OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {},
+                { id, _ -> failures.add(id) })
             host.setContentView(browser.view)
             for (url in listOf("https://[", "https://untrusted.example/product", "https://store.epicgames.com:1/product")) {
-                check(!browser.show(BrowserRequest("rejected-url", url, "拒绝诊断", Category.PC, "check", 1, 1, autoRetryAllowed = false)))
+                browser.show(BrowserRequest("rejected-url", url, "拒绝诊断", Category.PC, "check", 1, 1, autoRetryAllowed = false))
                 check(views(browser.view).none { it is WebView })
             }
+            check(failures.size == 3) { "Invalid or unofficial task URLs must each report a failure" }
             browser.close()
-            check(!browser.show(BrowserRequest("closed-browser", "https://store.epicgames.com/p/diagnostic",
-                "已关闭诊断", Category.PC, "check", 1, 1, autoRetryAllowed = false)))
+            browser.show(BrowserRequest("closed-browser", "https://store.epicgames.com/p/diagnostic",
+                "已关闭诊断", Category.PC, "check", 1, 1, autoRetryAllowed = false))
+            check(failures.size == 4) { "A closed browser must still reject new requests" }
             check(views(browser.view).none { it is WebView })
             host.finish()
         }
@@ -411,7 +486,7 @@ class NativeVerification : Instrumentation() {
         val host = launch(true)
         lateinit var browser: OfficialBrowserController
         onMain {
-            browser = OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {})
+            browser = OfficialBrowserController(host, { _, _, _, _ -> }, {}, {}, {}, {}, { _, _ -> })
             host.setContentView(browser.view)
             browser.show(BrowserRequest("network-error-fixture",
                 "https://store.epicgames.com/diagnostic", "网络错误诊断",

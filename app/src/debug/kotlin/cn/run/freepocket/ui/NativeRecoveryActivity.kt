@@ -37,7 +37,7 @@ class NativeRecoveryActivity : Activity() {
         val protectedBefore = protectedHashes()
         val result = when (mode) {
             "recoveryPrepare" -> prepare()
-            "recoveryResume" -> resume()
+            "localRecoveryResume" -> resume()
             "commitBenchmark" -> benchmark()
             else -> error("Unknown recovery mode")
         }

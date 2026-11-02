@@ -146,7 +146,7 @@ internal class ClaimJournal @Throws(JSONException::class) constructor(json: Stri
     }
 
     @Throws(JSONException::class)
-    fun reserve(key: String, stage: String) {
+    fun reserve(key: String, stage: String): UnissuedReservation {
         if (stage !in listOf("product", "submit")) throw JSONException("领取步骤无法识别")
         val entry = entry(key)!!
         if (entry.optBoolean("pageCheck")) throw JSONException("必须先完成官方商品页核实")
@@ -156,33 +156,32 @@ internal class ClaimJournal @Throws(JSONException::class) constructor(json: Stri
         val previous = reservations.optString(reservation)
         if (previous.isNotEmpty() && previous != current.getString("id"))
             throw JSONException("此项目有待核实订单，禁止再次自动提交")
+        val checkpoint = UnissuedReservation(current.getString("id"), key, stage, reservation,
+            JSONObject(entry.toString()), previous)
         reservations.put(reservation, current.getString("id"))
         entry.put(stage + "Authorized", true)
         update(entry, "uncertain", "领取操作已准备，恢复时须先核实库存")
+        return checkpoint
     }
 
-    /**
-     * Only this not-yet-issued stage may be rolled back. Earlier successful permits
-     * and their reservation must survive a later write failure.
-     */
-    fun reserveAndSave(key: String, stage: String, save: () -> Boolean): Boolean {
-        val entry = checkNotNull(entry(key))
-        val before = JSONObject(entry.toString())
-        val reservation = reservationKey(entry)
-        val previous = reservations.optString(reservation)
-        reserve(key, stage)
-        var saved = false
-        try {
-            saved = save()
-            return saved
-        } finally {
-            if (!saved) {
-                for (name in entry.keys().asSequence().toList()) entry.remove(name)
-                for (name in before.keys()) entry.put(name, before.get(name))
-                if (previous.isEmpty()) reservations.remove(reservation)
-                else reservations.put(reservation, previous)
-            }
-        }
+    /** Only a failed checkpoint whose permission was never sent may be undone. */
+    class UnissuedReservation internal constructor(
+        internal val runId: String,
+        internal val key: String,
+        internal val stage: String,
+        internal val reservation: String,
+        internal val entryBefore: JSONObject,
+        internal val previousReservation: String
+    )
+
+    fun rollbackUnissued(checkpoint: UnissuedReservation) {
+        check(current()?.getString("id") == checkpoint.runId)
+        val entry = checkNotNull(entry(checkpoint.key))
+        check(entry.optBoolean(checkpoint.stage + "Authorized"))
+        entry.keys().asSequence().toList().forEach(entry::remove)
+        for (key in checkpoint.entryBefore.keys()) entry.put(key, checkpoint.entryBefore.get(key))
+        if (checkpoint.previousReservation.isEmpty()) reservations.remove(checkpoint.reservation)
+        else reservations.put(checkpoint.reservation, checkpoint.previousReservation)
     }
 
     @Throws(JSONException::class)

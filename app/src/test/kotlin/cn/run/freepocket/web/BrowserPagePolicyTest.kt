@@ -6,23 +6,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BrowserPagePolicyTest {
+    @Test fun initialRequestsRequireExactOfficialHttpsOrigin() {
+        for (host in listOf("store.epicgames.com", "www.epicgames.com", "www.fab.com")) {
+            assertTrue(BrowserPagePolicy.canStartRequest("https://$host/path"))
+            assertTrue(BrowserPagePolicy.canStartRequest("https://${host}:443/path"))
+        }
+        for (url in listOf("https://example.com", "https://www.fab.com.evil.test",
+            "https://user:secret@www.fab.com/", "https://user@www.fab.com/listings/id",
+            "https://www.fab.com:444/", "https://www.fab.com:8443/login",
+            "http://www.fab.com/", "https:", "https://[", "not a url")) {
+            assertFalse(url, BrowserPagePolicy.canStartRequest(url))
+        }
+        assertTrue(BrowserPagePolicy.canStartRequest("https://www.epicgames.com/id/login?state=secret"))
+        // HTTPS links inside a task page may navigate, but cannot become an application task start.
+        assertTrue(BrowserPagePolicy.canNavigate("https://external.example/legal"))
+        assertTrue(BrowserPagePolicy.canNavigate("https://external-payment.example/path"))
+    }
     @Test fun allowsHttpsNavigationButRejectsLocalAndExecutableSchemes() {
         assertTrue(BrowserPagePolicy.canNavigate("https://www.epicgames.com/id/login?code=secret"))
         for (url in listOf("http://www.fab.com/", "file:///sdcard/token", "content://accounts/1",
             "javascript:alert(1)", "intent://login", "https:", "not a url")) {
             assertFalse(url, BrowserPagePolicy.canNavigate(url))
         }
-    }
-
-    @Test fun initialTaskPageMustBelongToAnAllowedOfficialOrigin() {
-        for (url in listOf("https://store.epicgames.com/p/game", "https://www.fab.com/login",
-            "https://www.epicgames.com/id/login?state=secret")) assertTrue(url, BrowserPagePolicy.canStart(url))
-        for (url in listOf("https://external.example/product", "https://user@www.fab.com/listings/id",
-            "https://www.fab.com:8443/login", "http://www.fab.com/login", "https://[", "")) {
-            assertFalse(url, BrowserPagePolicy.canStart(url))
-        }
-        // HTTPS links inside a task page may navigate, but cannot become an application task start.
-        assertTrue(BrowserPagePolicy.canNavigate("https://external.example/legal"))
     }
 
     @Test fun diagnosticsNeverDisplayAuthorizationQueryOrUserInfo() {

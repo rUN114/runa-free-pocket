@@ -54,6 +54,15 @@ internal class NativePocketView(context: Context, private val onAction: (PocketA
         main.tabPc.setOnClickListener { onAction(PocketAction.CategoryChanged(Category.PC)) }
         main.tabAndroid.setOnClickListener { onAction(PocketAction.CategoryChanged(Category.ANDROID)) }
         main.tabFab.setOnClickListener { onAction(PocketAction.CategoryChanged(Category.FAB)) }
+        listOf(main.tabPc, main.tabAndroid, main.tabFab).forEach { button ->
+            button.accessibilityDelegate = object : View.AccessibilityDelegate() {
+                override fun onInitializeAccessibilityNodeInfo(host: View, info: android.view.accessibility.AccessibilityNodeInfo) {
+                    super.onInitializeAccessibilityNodeInfo(host, info)
+                    info.className = "android.app.ActionBar\$Tab"
+                    info.isSelected = host.isSelected
+                }
+            }
+        }
         main.account.setOnClickListener {
             accounts = AccountPanel(openPanel(Screen.ACCOUNTS), onAction).also { it.render(state) }
         }

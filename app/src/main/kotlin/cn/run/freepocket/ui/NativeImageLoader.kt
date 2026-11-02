@@ -18,6 +18,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.io.IOException
 import java.util.WeakHashMap
@@ -26,7 +28,11 @@ internal class NativeImageLoader(context: Context) {
     private val images = OfficialImages(File(context.cacheDir, "official-images"))
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val jobs = WeakHashMap<ImageView, Job>()
-    private val memory = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
+    private val downloads = Semaphore(2)
+    private val runtime = Runtime.getRuntime()
+    private val availableMemory = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
+    private val cacheBudget = minOf(16L * 1024 * 1024, availableMemory / 16).toInt().coerceAtLeast(1)
+    private val memory = object : LruCache<String, Bitmap>(cacheBudget) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
 
@@ -53,12 +59,14 @@ internal class NativeImageLoader(context: Context) {
         jobs[image] = scope.launch {
             try {
                 val bitmap = withContext(Dispatchers.IO) {
-                    val bytes = images.read(key, cover)
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                    val options = BitmapFactory.Options().apply { inSampleSize = 1 }
-                    while (bounds.outWidth / options.inSampleSize > 1600 || bounds.outHeight / options.inSampleSize > 1600) options.inSampleSize *= 2
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: throw IOException("Unsupported artwork")
+                    downloads.withPermit {
+                        val bytes = images.read(key, cover)
+                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                        val options = BitmapFactory.Options().apply { inSampleSize = 1 }
+                        while (bounds.outWidth / options.inSampleSize > 1600 || bounds.outHeight / options.inSampleSize > 1600) options.inSampleSize *= 2
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: throw IOException("Unsupported artwork")
+                    }
                 }
                 memory.put(key, bitmap)
                 if (image.tag === binding) {

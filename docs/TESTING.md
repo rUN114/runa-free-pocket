@@ -1,3 +1,5 @@
+> 本次评审修复与可复跑设备检查见 [NATIVE-REVIEW-2026-11-01.md](NATIVE-REVIEW-2026-11-01.md) 和 [设备脚本](../tests/device/README.md)。
+
 > 原生版新增验证与设备测试入口见 [NATIVE-VERIFY-2026-11-01.md](NATIVE-VERIFY-2026-11-01.md)。下文历史ReleaseVerification操作仅适用于旧网页界面版本；当前主界面使用NativeVerification debug诊断测试，非调试包通过系统UI自动化检查，避免为测试保留生产类名和方法。
 
 # 测试与签名

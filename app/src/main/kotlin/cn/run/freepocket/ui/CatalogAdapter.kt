@@ -5,6 +5,7 @@ import android.content.res.ColorStateList
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.DiffUtil
 import cn.run.freepocket.R
 import cn.run.freepocket.databinding.NativeCatalogHeaderBinding
 import cn.run.freepocket.databinding.NativeCatalogItemBinding
@@ -21,9 +22,9 @@ internal class CatalogAdapter(
     private val onDetail: (String) -> Unit
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private sealed interface Row {
-        data object Header : Row
-        data class Section(val label: String) : Row
-        data class Item(val item: CatalogItem, val deadline: String, val claimable: Boolean) : Row
+        data class Header(val state: PocketUiState) : Row
+        data class Section(val key: String, val label: String) : Row
+        data class Item(val item: CatalogItem, val deadline: String, val selected: Boolean, val enabled: Boolean) : Row
     }
     private var state = PocketUiState()
     private var rows: List<Row> = emptyList()
@@ -38,29 +39,46 @@ internal class CatalogAdapter(
         val now = value.now
         val active = shown.filter { CatalogRules.availabilityAt(it, now) != Availability.UPCOMING }
         val upcoming = shown.filter { CatalogRules.availabilityAt(it, now) == Availability.UPCOMING }
-        rows = buildList {
-            add(Row.Header)
-            add(Row.Section(context.getString(R.string.native_active, active.size)))
+        val nextRows = buildList {
+            add(Row.Header(value))
+            add(Row.Section("active", context.getString(R.string.native_active, active.size)))
             if (active.isEmpty()) {
                 val empty = when {
                     value.hideOwned && categoryItems.any { it.status == Ownership.OWNED } -> R.string.native_empty_hidden
                     value.updated[value.category] == null -> R.string.native_empty_unloaded
                     else -> R.string.native_empty
                 }
-                add(Row.Section(context.getString(empty)))
+                add(Row.Section("empty", context.getString(empty)))
             }
-            active.forEach { add(Row.Item(it, it.deadlineLabel(context, now), CatalogRules.claimableNow(it, now))) }
+            active.forEach { add(Row.Item(it, it.deadlineLabel(context, now), it.key in value.selected, !value.busy && value.journalError.isBlank() && CatalogRules.claimableNow(it, now))) }
             if (upcoming.isNotEmpty()) {
-                add(Row.Section(context.getString(R.string.native_upcoming, upcoming.size)))
-                upcoming.forEach { add(Row.Item(it, it.deadlineLabel(context, now), CatalogRules.claimableNow(it, now))) }
+                add(Row.Section("upcoming", context.getString(R.string.native_upcoming, upcoming.size)))
+                upcoming.forEach { add(Row.Item(it, it.deadlineLabel(context, now), it.key in value.selected, !value.busy && value.journalError.isBlank() && CatalogRules.claimableNow(it, now))) }
             }
         }
-        notifyDataSetChanged()
+        val previousRows = rows
+        val changes = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize() = previousRows.size
+            override fun getNewListSize() = nextRows.size
+            override fun areItemsTheSame(oldPosition: Int, newPosition: Int): Boolean {
+                val old = previousRows[oldPosition]
+                val new = nextRows[newPosition]
+                return when {
+                    old is Row.Header && new is Row.Header -> true
+                    old is Row.Section && new is Row.Section -> old.key == new.key
+                    old is Row.Item && new is Row.Item -> old.item.key == new.item.key
+                    else -> false
+                }
+            }
+            override fun areContentsTheSame(oldPosition: Int, newPosition: Int) = previousRows[oldPosition] == nextRows[newPosition]
+        })
+        rows = nextRows
+        changes.dispatchUpdatesTo(this)
     }
 
     fun isFullWidth(position: Int): Boolean = rows[position] !is Row.Item
     override fun getItemCount(): Int = rows.size
-    override fun getItemViewType(position: Int): Int = when (rows[position]) { Row.Header -> 0; is Row.Section -> 1; is Row.Item -> 2 }
+    override fun getItemViewType(position: Int): Int = when (rows[position]) { is Row.Header -> 0; is Row.Section -> 1; is Row.Item -> 2 }
     override fun onCreateViewHolder(parent: ViewGroup, type: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
         return when (type) {
@@ -125,8 +143,8 @@ internal class CatalogAdapter(
         image.setOnClickListener { onDetail(item.key) }
         images.bind(image, imageStatus, item.cover, context.getString(R.string.native_cover, item.title))
         selected.setOnCheckedChangeListener(null)
-        selected.isChecked = item.key in state.selected
-        selected.isEnabled = !state.busy && state.journalError.isBlank() && row.claimable
+        selected.isChecked = row.selected
+        selected.isEnabled = row.enabled
         selected.contentDescription = context.getString(R.string.native_select_item, item.title)
         selected.setOnCheckedChangeListener { _, checked -> onAction(PocketAction.ItemSelected(item.key, checked)) }
         ownership.text = item.ownershipLabel(context)
@@ -139,7 +157,7 @@ internal class CatalogAdapter(
         checked.text = item.checkedAt?.let { context.getString(
             if (item.cached) R.string.native_last_sync else R.string.native_checked, localTime(it)) } ?: ""
         checked.showWhen(checked.text.isNotEmpty())
-        root.backgroundTintList = ColorStateList.valueOf(context.getColor(if (item.key in state.selected) R.color.native_surface_variant else R.color.native_surface))
+        root.backgroundTintList = ColorStateList.valueOf(context.getColor(if (row.selected) R.color.native_surface_variant else R.color.native_surface))
     }
 
     override fun onViewRecycled(holder: RecyclerView.ViewHolder) {

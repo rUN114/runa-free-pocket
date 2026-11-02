@@ -20,8 +20,7 @@ internal class AccountPanel(private val binding: NativePanelBinding, private val
         val previous = rendered
         if (previous != null && previous.epic == state.epic && previous.fab == state.fab && previous.busy == state.busy &&
             previous.country == state.country && previous.fabTier == state.fabTier) return
-        // Busy/account refreshes must not discard a region the user has not saved.
-        val draft = if (previous?.country == state.country) countryInput?.text?.toString() ?: state.country else state.country
+        val countryDraft = if (previous != null && previous.country == state.country) countryInput?.text?.toString() else null
         rendered = state
         val context = binding.root.context
         binding.title.setText(R.string.native_accounts_title)
@@ -31,7 +30,7 @@ internal class AccountPanel(private val binding: NativePanelBinding, private val
             account(state.fab, Category.FAB, R.string.native_fab_account, state.busy)
             addText(context.getString(R.string.native_country), heading = true)
             val country = EditText(context).apply {
-                setText(draft)
+                setText(countryDraft ?: state.country)
                 hint = context.getString(R.string.native_country_hint)
                 contentDescription = context.getString(R.string.native_country)
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS

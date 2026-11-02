@@ -47,6 +47,7 @@
   function plainText(value) {
     return typeof value === 'string' ? value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000) : '';
   }
+  // Legacy Web-UI regression oracle. Native production PC discovery uses CatalogRules.parsePc.
   function parsePc(data, now = Date.now()) {
     const items = array(data?.data?.Catalog?.searchStore?.elements, 'Epic 活动');
     return items.flatMap(item => {
@@ -113,6 +114,7 @@
     return {cover: images[0] || '', screenshots: [...new Set(images)],
       description: plainText(listing.description), publisher: listing.user?.sellerName || '', originalPrice: ''};
   }
+  // Legacy Web-UI oracle; current native inventory decisions use CatalogRules.applyOwnership.
   function applyOwnership(items, snapshot, fresh = true, category = null) {
     if (!snapshot?.accountId || !Number.isFinite(snapshot.checkedAt)) throw new Error('账号库存身份或同步时间缺失');
     const owned = new Set(array(snapshot.owned, '账号库存').map(entry => entry.namespace + ':' + entry.id));
@@ -159,6 +161,7 @@
     if (amount === null) return 'unreadable';
     return amount === 0 ? 'zero' : 'nonzero';
   }
+  // Legacy tri-state wrapper retained for regression tests; checkout adapter calls totalState.
   function zeroTotal(text, productTitle = '') {
     const state = totalState(text, productTitle);
     if (state === 'zero') return true;

@@ -1,44 +1,28 @@
-# Native review fixes implementation plan
+# 原生版评审修复计划
 
-> Execute using subagent-driven-development for the isolated device-verification task; root owns production fixes. User approved the reviewed scope; continue without another design approval gate.
+用户已确认上一轮核对并授权连续修复。基线febbecc，工作区fix/native-review-20261101（从refactor/native-ui隔离）。保留旧原版源码和桌面未提交文件，不公开推送。
 
-Goal: recover safely from invalid navigation and failed unissued checkpoints, retain meaningful timeout feedback, cover Fab orchestration and restore repeatable device-recovery verification.
-Architecture: keep Kotlin Views, existing synchronous journal durability and source-restricted WebView messaging. Do not add dependencies or rewrite the whole task engine. Measure synchronous commits before changing the persistence concurrency model.
-Decision: keep synchronous durability for this preview. VM2 benchmark measured separate serialization and commit phases: 21KB ordinary journal is small; a 425KB retained-history journal has a one-frame jank risk. Explicitly record this accepted cost and physical-device uncertainty; do not claim all main-thread I/O is removed.
+## 预期行为与边界
+- 错误/非官方初始商品地址显示任务失败，不抛异常崩溃；网页内部HTTPS导航与来源受限桥保留。导航解析失败撤销Fab许可确认，不引入Android依赖到协调器。
+- 预约保存失败且未回复许可时，仅回退本次内存变更；此前已发出的许可/预约不撤销。恢复存储后先确认保存恢复状态，再允许继续。过程死亡仍保守以磁盘记录为准。
+- 把next/fail的嵌套推进收敛成迭代泵，补可重入触发测试，不变更任务顺序。
+- 读取40秒后追加未完成提醒，waiting消息不能取消/重置；保留具体错误和用户验证提示，不取消任务/自动重复提交。
+- 同步commit是已选的持久化屏障，先用真实SharedPreferences测量成本并记录接受范围；不在本轮仓促将全协调器改成异步事务。
+- Fab增加原生编排用例：档位、账号漂移、许可失效、同id脚本安装、拥有库和未确认恢复。
+- 账号地区草稿跨状态刷新保留，列表使用DiffUtil，补基础无障碍与图片资源控制；不盲目捕获OOME、不改变正文选择能力。
+- 历史无效JS函数注明迁移边界，官网自动化代码不改。补仓库内可复跑的只读release UI脚本和隔离debug设备中断/恢复演练。
+- 保留preview版本性质，增加versionCode并更新包名版本后缀，提供新APK与Git版本；不冒充真机、新增真实订单或公开发布。
 
-Global constraints: minimum API26, compile/target35; original signing/storage formats; no new real orders; existing reservations cannot be cleared just to retry; preserve untracked IDE files and the old workspace; local Git checkpoints only, no public push.
+## 工作分配
+1. 浏览器：web/策略/错误回传/读取提醒及相关单测；与宿主新增onFailure(id,reason)边界。
+2. UI：ui原生面板、列表、图像资源、XML无障碍；独立诊断检查辅助文件。
+3. Fab测试：独立FabCoordinatorTest测试文件，无生产编辑。
+4. 主任务：ClaimJournal/Coordinator恢复、导航失效、迭代泵、ViewModel/Main接线、设备测试/脚本、文档/签名/构建/桌面交付。
 
-## Task 1 - URL failures and Fab coordinator regression
-Files: claim/ClaimCoordinator.kt, claim/ClaimCatalogue.kt, web/BrowserPagePolicy.kt, web/OfficialBrowserController.kt, MainActivity.kt, model/CatalogItem.kt, related JVM and diagnostic tests.
-- [ ] Write failing tests for malformed navigation cancelling Fab confirmation, invalid/unofficial cached product URLs failing before browser publication, and Fab tier mismatch/account drift/license invalidation/ownership.
-- [ ] Run focused JVM tests in D:/Android/Builds/runa-native-review (no apostrophe).
-- [ ] Add pure official product URL validation at cache/model boundary; malformed navigation revokes the current Fab confirmation without adding Android dependencies.
-- [ ] Browser show failures report task-specific errors through a callback, never crash the Activity or reply using an obsolete nonce.
-- [ ] Verify focused tests and checkpoint.
+## 验证
+- 先添加可失败回归并实跑，再修复。D:/Android/Builds/runa-native-verify为无撇号构建目录。
+- 现有82 JVM/88 JS与新增风险用例，release构建/Lint/验签；不禁用规则。
+- 独立模拟器上运行实际原生UI、错误脱敏、waiting截止提醒、SharedPreferences耗时、隔离账本的进程强停恢复及只读release冒烟。
+- 读完整diff做维护性整理，使用独立审核上下文核对需求与安全保护，再更新版本、Git与桌面交付。
 
-## Task 2 - Durable reservation failure recovery
-Files: ClaimJournal.kt, claim/ClaimCoordinator.kt, claim and journal JVM tests.
-- [ ] Fail a test that retries the first unissued stage after save failure and storage recovery.
-- [ ] Introduce a targeted reserve-and-save transaction: rollback only this unissued stage if save reports failure. Existing successful stages/reservations remain protected.
-- [ ] Publish paused/error state after a failed save; do not grant page permission. Test submit-stage failure retains prior product reservation; crash-reconstructed records remain conservative.
-- [ ] Keep next/fail reentrancy unchanged unless a concrete test demonstrates incorrect behavior.
-
-## Task 3 - Read reminder and local UI draft
-Files: web/ReadDeadline.kt (pure policy if useful), OfficialBrowserController.kt, AccountPanel.kt, native XML and focused tests.
-- [ ] Reproduce waiting messages cancelling the generic 40s reminder.
-- [ ] Keep the reminder clock independent of progress text; append a reminder to specific waiting status, do not terminate login/captcha/order and do not erase explicit network failures.
-- [ ] Preserve unsubmitted country input across busy/account updates; add live-region to journal error. Keep history view accessible during work with its actions disabled.
-- [ ] Test policies and native diagnostic states.
-
-## Task 4 - Repeatable device verification
-Files: debug-only fixture host(s), NativeVerification.kt and tests/device/native-smoke.py plus docs.
-- [ ] In an isolated debug host backed by separate diagnostic prefs, persist an in-flight journal/reservation, externally kill the process, restart and resume read-only; assert same run/reservation and no order permission. Never write real account journal/prefs.
-- [ ] Save a standard-library-only adb driver requiring explicit serial and output dir, checking every command/result. Include real release read-only UI checks and debug recovery modes separately.
-- [ ] Add measured main-thread commit benchmark in separate diagnostic prefs; report payload size and p50/p95/max, do not conflate with physical-device latency.
-- [ ] Repeat popup/nonce/frame/timeout/error-redaction checks as affected.
-
-## Task 5 - Verification and delivery
-- [ ] Code-simplifier review of changed code, independent full diff review; fix substantive findings and rerun affected checks.
-- [ ] Run JVM/88 JS/Android debug tests and signed release build+Lint; verify actual release startup, native UI and image states; no real new orders.
-- [ ] Record remaining synchronous IO decision from measurements; update version to preview.2, docs, APK bytes/hash and test boundaries.
-- [ ] Commit, local tag, deliver versioned desktop APK and update desktop source in place; retain original preview artifact and old source. No GitHub push.
+执行完成。结果、保留的同步屏障成本及并行桌面改动边界见 docs/NATIVE-REVIEW-2026-11-01.md。

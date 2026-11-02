@@ -66,6 +66,7 @@ class ClaimCoordinatorTest {
         assertEquals("claim", fixture.browser?.mode)
         fixture.coordinator.onWebMessage(fixture.actionReady(), STORE, true, replies::add)
         assertEquals(1, replies.size)
+        assertEquals("product", replies.single().getString("stage"))
         fixture.coordinator.onWebMessage(oldRequest, STORE, true, replies::add)
         assertEquals("Old page cannot receive the new run's permission", 1, replies.size)
         fixture.coordinator.close()
@@ -87,6 +88,7 @@ class ClaimCoordinatorTest {
         fixture.coordinator.command(JSONObject().put("action", "resumeBatch"))
         runCurrent()
         assertFalse(fixture.browser?.mode == "claim")
+        assertEquals(1, replies.size)
         fixture.coordinator.close()
     }
 
