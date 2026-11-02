@@ -7,6 +7,14 @@ try {
     $scripts = @(Get-ChildItem -LiteralPath tests -Filter '*.test.cjs' | ForEach-Object FullName)
     & node --test @scripts
     if ($LASTEXITCODE -ne 0) { throw 'JavaScript tests failed' }
+    # Python 回归：上游探针异常样本与设备脚本的摘要测试（无网络、无设备）。
+    foreach ($suite in @(@('upstream', 'test_probe'), @('device', 'test_release_smoke'))) {
+        Push-Location -LiteralPath (Join-Path $PSScriptRoot $suite[0])
+        try {
+            & python -m unittest $suite[1]
+            if ($LASTEXITCODE -ne 0) { throw "Python tests failed: $($suite[1])" }
+        } finally { Pop-Location }
+    }
     if ($Browser) {
         & node tests/browser/ui.cjs
         if ($LASTEXITCODE -ne 0) { throw 'Browser UI tests failed' }
