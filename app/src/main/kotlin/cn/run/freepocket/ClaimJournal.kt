@@ -6,7 +6,7 @@ import org.json.JSONObject
 import java.util.ArrayList
 import java.util.UUID
 
-/** Local batch progress. Reservations survive history trimming and are never replayed as orders. */
+/** Local batch progress. Reservations survive history trimming and protect possible submissions. */
 internal class ClaimJournal @Throws(JSONException::class) constructor(json: String) {
     private val root: JSONObject = JSONObject(json)
     private val runs: JSONArray
@@ -78,6 +78,34 @@ internal class ClaimJournal @Throws(JSONException::class) constructor(json: Stri
         return platform(entry.getString("category")) + ":" + owner.getString("id") + ":" + entry.getString("key")
     }
 
+    fun hasFabCheckoutToResume(): Boolean {
+        val run = current() ?: return false
+        if (!run.getJSONObject("owners").has("fab")) return false
+        val entries = run.getJSONArray("entries")
+        return (0 until entries.length()).any { index ->
+            val entry = entries.getJSONObject(index)
+            entry.getString("status") == "uncertain" && entry.getString("category") == "fab" &&
+                openedFabCheckoutOnly(entry.getString("key"), reservations.optString(reservationKey(entry)))
+        }
+    }
+
+    private fun openedFabCheckoutOnly(key: String, reservedBy: String): Boolean {
+        if (reservedBy.isEmpty()) return false
+        for (i in 0 until runs.length()) {
+            val run = runs.getJSONObject(i)
+            if (run.getString("id") != reservedBy) continue
+            val entries = run.getJSONArray("entries")
+            for (j in 0 until entries.length()) {
+                val entry = entries.getJSONObject(j)
+                if (entry.getString("key") != key || entry.getString("category") != "fab") continue
+                // Fab's product permit opens checkout. A submit permit, or missing history, remains protected.
+                return entry.opt("productAuthorized") == true && !entry.has("submitAuthorized")
+            }
+            break
+        }
+        return false
+    }
+
     @Throws(JSONException::class)
     fun entry(key: String): JSONObject? {
         val current = current() ?: return null
@@ -90,7 +118,7 @@ internal class ClaimJournal @Throws(JSONException::class) constructor(json: Stri
     }
 
     @Throws(JSONException::class)
-    fun plan(category: String, catalogue: JSONArray, now: Long) {
+    fun plan(category: String, catalogue: JSONArray, now: Long, resumeFabCheckout: Boolean = false) {
         val current = current()!!
         val planned = current.getJSONObject("planned")
         if (!planned.optBoolean(category)) {
@@ -111,12 +139,32 @@ internal class ClaimJournal @Throws(JSONException::class) constructor(json: Stri
             if (category != entry.getString("category")) continue
             val status = entry.getString("status")
             if (status in listOf("claimed", "owned", "skipped")) continue
-            val item = find(catalogue, entry.getString("key"))
+            val key = entry.getString("key")
+            val item = find(catalogue, key)
             if (item != null && item.optString("status") == "owned" && !item.optBoolean("cached")) {
-                result(entry.getString("key"), "owned", "官方库存已确认")
-            } else if (reservations.has(reservationKey(entry))) {
-                update(entry, "uncertain", "此前可能已提交，仅重新核实，不自动重复下单")
-            } else if (item == null || !cn.run.freepocket.data.LegacyCatalogState.claimableNow(item, now)) {
+                result(key, "owned", "官方库存已确认")
+                continue
+            }
+            val reservation = reservationKey(entry)
+            val reservedBy = reservations.optString(reservation)
+            val claimable = item != null && cn.run.freepocket.data.LegacyCatalogState.claimableNow(item, now)
+            if (reservations.has(reservation)) {
+                val canReopen = category == "fab" && resumeFabCheckout && status == "uncertain" && claimable &&
+                    item?.optString("status") == "unowned" && !item.optBoolean("cached") &&
+                    openedFabCheckoutOnly(key, reservedBy)
+                if (!canReopen) {
+                    val reason = if (category == "fab") {
+                        "尚未通过 Fab 素材库确认入库。可到官网查看订单和素材库。"
+                    } else {
+                        "此前可能已提交，仅重新核实，不自动重复下单"
+                    }
+                    update(entry, "uncertain", reason)
+                    continue
+                }
+                reservations.remove(reservation)
+                entry.remove("productAuthorized")
+            }
+            if (item == null || !claimable) {
                 update(entry, "skipped", if (item == null) "已不在当前官方活动中" else "活动未开始、已结束或已拥有")
             } else if (item.optString("status") !in listOf("unowned", "partial") || item.optBoolean("cached")) {
                 entry.put("pageCheck", true)

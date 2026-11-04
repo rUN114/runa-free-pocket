@@ -126,7 +126,7 @@ def main():
             resumed = instrument('localRecoveryResume', 'localRecoveryResume.json')
             if prepared['pid'] == resumed['pid'] or prepared['runId'] != resumed['runId'] or prepared['reservations'] != resumed['reservations']:
                 raise RuntimeError('Process/run/reservation recovery mismatch')
-            if resumed.get('permissionsGranted') != 0 or resumed.get('readOnlyCheckReached') is not True or 'claim' in resumed['observedModes']:
+            if resumed.get('permissionsGranted') != 0 or resumed.get('observedModes') != ['discover', 'syncFab']:
                 raise RuntimeError('Recovery was not read-only')
             summary = resumed
         elif args.mode == 'debug-benchmark':

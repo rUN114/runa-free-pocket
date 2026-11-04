@@ -20,7 +20,8 @@ internal data class ClaimTask(
     var verifyAttempt: Int = 0,
     var fabTier: String = "",
     var fabTierVerified: Boolean = false,
-    var accountId: String = ""
+    var accountId: String = "",
+    val resumeFabCheckout: Boolean = false
 ) {
     fun browserPayload(country: String): JSONObject = JSONObject()
         .put("mode", mode.wire).put("category", category.wire).put("country", country)

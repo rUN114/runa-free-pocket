@@ -132,14 +132,13 @@ class NativeRecoveryActivity : Activity() {
         check(browser?.mode == "syncFab")
         message(JSONObject().put("type", "ownership").put("owned", JSONArray())
             .put("accountId", "diagnostic-owner").put("displayName", "诊断账号").put("checkedAt", System.currentTimeMillis()))
-        check(browser?.mode == "check")
-        for (stage in listOf("product", "submit")) message(JSONObject().put("type", "actionReady").put("stage", stage).put("fabTier", "personal"))
+        check(browser == null && !engine.busy) { "Recovery must finish after the Fab library read" }
+        check(modes == listOf("discover", "syncFab"))
         check(journal.entry(item().key)!!.getString("status") == "uncertain")
         check(JSONObject(journal.serialize()).getJSONObject("reservations").toString() == reservations)
         check(journal.current()!!.getString("id") == run)
         return JSONObject().put("runId", run).put("reservations", JSONObject(reservations))
             .put("preparedPid", preparedPid).put("observedModes", JSONArray(modes)).put("permissionsGranted", 0)
-            .put("readOnlyCheckReached", true)
     }
 
     private fun benchmark(): JSONObject {

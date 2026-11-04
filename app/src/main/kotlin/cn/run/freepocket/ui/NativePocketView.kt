@@ -1,5 +1,6 @@
 package cn.run.freepocket.ui
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.res.ColorStateList
 import android.view.ContextThemeWrapper
@@ -20,7 +21,7 @@ internal class NativePocketView(context: Context, private val onAction: (PocketA
     private val root = FrameLayout(themed)
     private val main = NativePocketBinding.inflate(inflater, root, false)
     private val images = NativeImageLoader(context)
-    private val catalog = CatalogAdapter(images, onAction, ::openDetail)
+    private val catalog = CatalogAdapter(images, ::dispatch, ::openDetail)
     private var state = PocketUiState()
     private var screen = Screen.CATALOG
     private var panel: NativePanelBinding? = null
@@ -67,11 +68,25 @@ internal class NativePocketView(context: Context, private val onAction: (PocketA
             accounts = AccountPanel(openPanel(Screen.ACCOUNTS), onAction).also { it.render(state) }
         }
         main.history.setOnClickListener {
-            history = HistoryPanel(openPanel(Screen.HISTORY), onAction).also { it.render(state) }
+            history = HistoryPanel(openPanel(Screen.HISTORY), ::dispatch).also { it.render(state) }
         }
         main.claimAll.setOnClickListener { onAction(PocketAction.ClaimAll) }
         main.claimSelected.setOnClickListener { onAction(PocketAction.ClaimSelected) }
         render(state)
+    }
+
+    private fun dispatch(action: PocketAction) {
+        val run = state.history.firstOrNull()
+        if (action == PocketAction.ResumeBatch && run?.fabCheckoutRecoverable == true) {
+            AlertDialog.Builder(themed)
+                .setTitle(R.string.native_fab_resume_title)
+                .setMessage(R.string.native_fab_resume_message)
+                .setPositiveButton(R.string.native_fab_resume_confirm) { _, _ ->
+                    onAction(PocketAction.ResumeFabCheckout(run.id))
+                }
+                .setNegativeButton(R.string.native_fab_resume_others) { _, _ -> onAction(action) }
+                .show()
+        } else onAction(action)
     }
 
     fun render(value: PocketUiState) {

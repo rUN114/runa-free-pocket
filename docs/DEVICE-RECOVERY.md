@@ -22,7 +22,7 @@ python tests/device/native-smoke.py --serial 127.0.0.1:16448 --output-dir D:/And
 
 `recoveryPrepare` 在 debug 专用、非导出 `NativeRecoveryActivity` 中用真实 ClaimCoordinator 发起 Fab claim，以独立离线后台供应目录与库存，推进到claim后发送product actionReady；假transport收到唯一一次product许可时，立即检查独立prefs已持久化同run的预约及productAuthorized，再保留运行中批次，不做正常暂停。准备阶段许可仅计数，不执行任何网页脚本或网络订单。宿主没有 WebView、网络客户或生产 repository。唯一写入为 `native-recovery-diagnostic` 偏好。
 
-Python 驱动检查 instrumentation 的 `verification=passed: recoveryPrepare` 和 `INSTRUMENTATION_CODE: -1`，拉取 JSON 后从 adb 外部 force-stop 目标包并确认 pid 消失。随后重新 instrumentation，宿主断言 PID 不同，重建账本已自动 paused，run ID 与预约完全相同。调用真实 ClaimCoordinator 的 resumeBatch，以独立内存后台供应 Fab 目录与库存，断言经过 discover、syncFab、check，所有观察到的模式均非 claim；在 check 阶段发送 product/submit actionReady 均不得收到新增许可（准备阶段向假transport发过1次product许可，恢复阶段新增许可为0），预约和 uncertain 状态保留。整个过程不评估网页脚本、不发送订单。
+Python 驱动检查 instrumentation 的 `verification=passed: recoveryPrepare` 和 `INSTRUMENTATION_CODE: -1`，拉取 JSON 后从 adb 外部 force-stop 目标包并确认 pid 消失。随后重新 instrumentation，宿主断言 PID 不同，重建账本已自动 paused，run ID 与预约完全相同。调用真实 ClaimCoordinator 的 resumeBatch，以独立内存后台供应 Fab 目录与库存。没有用户确认时，只执行 discover 和 syncFab，恢复阶段新增许可为 0，预约和 uncertain 状态保留。整个过程不评估网页脚本、不发送订单。
 
 诊断前后对真实 catalogue、claim-journal、epic-auth XML 和已存在的 WebView Cookies 文件只读计算 SHA-256；跨进程也核对准备时摘要。摘要变化会失败，报告不导出真实内容。诊断不处理系统强杀之外的全部故障类型，不能代替真实订单或服务端幂等验收。
 

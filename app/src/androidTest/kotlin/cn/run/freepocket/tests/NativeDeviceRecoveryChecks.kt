@@ -70,10 +70,8 @@ internal object NativeDeviceRecoveryChecks {
             try {
                 fixture.coordinator.command(JSONObject().put("action", "resumeBatch"))
                 fixture.discoverAndSync()
-                check(fixture.browser?.mode == "check")
-                for (stage in listOf("product", "submit")) fixture.send(fixture.ready(stage))
+                check(fixture.browser == null) { "Recovery must finish after the Fab library read" }
                 check(fixture.permits.isEmpty())
-                fixture.send(JSONObject().put("type", "result").put("status", "unowned"))
                 val entry = fixture.backend.journal.entry(KEY)!!
                 check(entry.getString("status") == "uncertain")
                 check(entry.getBoolean("productAuthorized") && entry.getBoolean("submitAuthorized"))

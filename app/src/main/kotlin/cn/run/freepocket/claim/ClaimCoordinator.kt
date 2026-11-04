@@ -71,9 +71,11 @@ internal class ClaimCoordinator(
             when (command.getString("action")) {
                 "claimAll", "resumeBatch" -> {
                     if (!journalAvailable()) return
-                    if (command.getString("action") == "claimAll") journal!!.start(backend.country, listOf("pc", "android", "fab"), null)
-                    else journal!!.resume(backend.country)
-                    if (saveJournal()) queueBatch()
+                    val resume = command.getString("action") == "resumeBatch"
+                    if (resume) journal!!.resume(backend.country)
+                    else journal!!.start(backend.country, listOf("pc", "android", "fab"), null)
+                    val resumeFabCheckout = resume && journal!!.current()!!.getString("id") == command.optString("confirmFabCheckoutRunId")
+                    if (saveJournal()) queueBatch(resumeFabCheckout)
                     return
                 }
                 "fabTier" -> {
@@ -166,13 +168,13 @@ internal class ClaimCoordinator(
     private fun connected(category: Category): Boolean = if (category == Category.FAB) backend.fabAccount.optBoolean("connected") else backend.epic.connected()
     private fun syncTask(category: Category, forClaim: Boolean = false) = ClaimTask(if (category == Category.FAB) TaskMode.SYNC_FAB else TaskMode.SYNC_EPIC, category, forClaim = forClaim)
 
-    private fun queueBatch() {
+    private fun queueBatch(resumeFabCheckout: Boolean = false) {
         for (wire in journal!!.categories()) {
             val category = Category.fromWire(wire)
             tasks.add(ClaimTask(TaskMode.DISCOVER, category))
             tasks.add(ClaimTask(TaskMode.ENSURE_AUTH, category))
             tasks.add(syncTask(category, forClaim = true))
-            tasks.add(ClaimTask(TaskMode.PLAN, category))
+            tasks.add(ClaimTask(TaskMode.PLAN, category, resumeFabCheckout = resumeFabCheckout && category == Category.FAB))
         }
         beginQueue()
     }
@@ -210,7 +212,7 @@ internal class ClaimCoordinator(
                     if (!connected(task.category)) { task.mode = TaskMode.AUTH; break }
                 } else if (task.mode == TaskMode.PLAN) {
                     if (!bindBatchAccount(task.category)) return
-                    plan(task.category)
+                    plan(task.category, task.resumeFabCheckout)
                     if (!saveJournal()) return
                 } else if (task.item != null) {
                     if (prepareItem(task)) break
@@ -235,15 +237,17 @@ internal class ClaimCoordinator(
         }
     }
 
-    private fun plan(category: Category) {
-        journal!!.plan(category.wire, backend.items, System.currentTimeMillis())
+    private fun plan(category: Category, resumeFabCheckout: Boolean) {
+        journal!!.plan(category.wire, backend.items, System.currentTimeMillis(), resumeFabCheckout)
         val entries = journal!!.work(category.wire)
         for (entry in entries.asReversed()) {
             val item = catalogue.find(entry.getString("key")) ?: continue
             val uncertain = entry.getString("status") == "uncertain"
+            // The batch already read the complete acquired library for the bound Fab account.
+            if (uncertain && category == Category.FAB) continue
             val precheck = !uncertain && entry.optBoolean("pageCheck")
             val mode = when {
-                uncertain -> if (category == Category.FAB) TaskMode.CHECK else TaskMode.VERIFY_EPIC
+                uncertain -> TaskMode.VERIFY_EPIC
                 precheck -> TaskMode.CHECK
                 else -> TaskMode.CLAIM
             }

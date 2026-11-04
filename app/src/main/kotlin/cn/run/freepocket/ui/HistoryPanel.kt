@@ -36,7 +36,7 @@ internal class HistoryPanel(private val binding: NativePanelBinding, private val
                 contentDescription = context.getString(R.string.native_history_title)
                 adapter = ArrayAdapter(context, R.layout.native_history_option, state.history.mapIndexed { index, run ->
                     context.getString(if (index == 0) R.string.native_history_latest else R.string.native_history_old,
-                        localTime(run.startedAt), runStateLabel(run.state))
+                        localTime(run.startedAt), runStateLabel(run))
                 })
                 setSelection(selected)
             }
@@ -89,9 +89,10 @@ internal class HistoryPanel(private val binding: NativePanelBinding, private val
         }
     }
 
-    private fun runStateLabel(state: String): String = binding.root.context.getString(when (state) {
+    private fun runStateLabel(run: ClaimRunUi): String = binding.root.context.getString(when (run.state) {
         "paused" -> R.string.native_run_paused
-        "completed", "done", "finished" -> R.string.native_run_done
+        "completed", "done", "finished" -> if (run.entries.any { it.status == "uncertain" })
+            R.string.native_run_verify_pending else R.string.native_run_done
         "working", "running" -> R.string.native_run_active
         else -> R.string.native_run_saved
     })

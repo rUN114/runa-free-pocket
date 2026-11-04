@@ -22,6 +22,11 @@
     <string name="native_updated">活动更新于 %1$s</string><string name="native_not_updated">活动尚未更新</string>
     <string name="native_owned_count">已拥有 %1$d 项 · 已选择 %2$d 项</string><string name="native_unconnected">未连接 %1$s · 连接后核实拥有状态</string><string name="native_connected">%1$s · %2$s</string><string name="native_account_connected">账号已连接</string>
     <string name="native_resume_short">继续任务</string><string name="native_resume">继续最新任务</string><string name="native_recover_note">继续时先核实库存，已拥有不会重复领取；订单待核实项目保留保护。</string>
+    <string name="native_fab_resume_title">继续 Fab 领取</string>
+    <string name="native_fab_resume_message">有 Fab 素材曾准备打开结算，程序没有放行提交。如果你也没有手动提交这些订单，可以继续领取。程序会先查素材库，可能已提交的订单只核实。你也可以跳过重新结算，继续领取批次中的其他项目。</string>
+    <string name="native_fab_resume_confirm">未手动提交，继续</string>
+    <string name="native_fab_resume_others">继续其他项目</string>
+    <string name="native_run_verify_pending">有订单待核实</string>
     <string name="native_publisher">发行方：%1$s</string><string name="native_description_missing">暂无官方简介，请查看商品官网。</string><string name="native_official">打开商品官网</string><string name="native_screenshots">官方截图</string>
     <string name="native_accounts_title">账号与设置</string><string name="native_epic_account">Epic 账号 · 电脑与 Android</string><string name="native_fab_account">Fab 账号</string><string name="native_disconnected">尚未连接</string>
     <string name="native_account_time">拥有状态同步于 %1$s</string><string name="native_connect">连接 %1$s</string><string name="native_reauthorize">重新授权 %1$s</string><string name="native_switch">切换账号</string><string name="native_logout">退出账号</string>

@@ -230,19 +230,78 @@ class FabCoordinatorTest {
         val f = Fixture(this)
         f.claim()
         f.send(f.ready())
+        f.send(f.ready("submit"))
         f.coordinator.back()
-        f.coordinator.command(JSONObject().put("action", "resumeBatch"))
+        f.resume(confirmNoManualOrder = true)
         f.discover()
         f.ownership()
-        assertEquals("check", f.browser!!.mode)
-        val nonce = f.browser!!.id
-        f.send(f.ready())
-        f.send(f.ready("submit"))
-        assertEquals(1, f.replies.size)
-        f.send(JSONObject().put("nonce", nonce).put("type", "result").put("status", "unowned"))
+        assertFalse(f.backend.journal.hasFabCheckoutToResume())
+        assertEquals(null, f.browser)
+        assertEquals(2, f.replies.size)
         assertFalse(f.coordinator.busy)
         assertEquals("uncertain", f.entry().getString("status"))
         assertEquals(1, f.reservations().length())
+        f.coordinator.close()
+    }
+
+    @Test fun confirmedRecoveryReopensProductOnlyReservationInheritedFromAnOlderRun() = runTest {
+        val f = Fixture(this)
+        f.claim()
+        f.send(f.ready())
+        f.coordinator.back()
+        f.claim(expectClaim = false)
+        assertEquals(null, f.browser)
+        assertEquals("uncertain", f.entry().getString("status"))
+        assertEquals(1, f.reservations().length())
+        assertTrue(f.backend.journal.hasFabCheckoutToResume())
+
+        f.resume(confirmNoManualOrder = false)
+        f.discover()
+        f.ownership()
+        assertEquals(null, f.browser)
+        assertEquals(1, f.reservations().length())
+
+        f.resume(confirmNoManualOrder = true)
+        f.discover()
+        f.ownership()
+        assertEquals("claim", f.browser?.mode)
+        assertEquals(0, f.reservations().length())
+        f.send(f.ready())
+        f.send(f.ready("submit"))
+        assertEquals(listOf("product", "product", "submit"), f.replies.map { it.getString("stage") })
+        f.coordinator.close()
+    }
+
+    @Test fun confirmedRecoveryKeepsReservationWhenOriginRunWasTrimmed() = runTest {
+        val f = Fixture(this)
+        f.claim()
+        f.send(f.ready())
+        f.coordinator.back()
+        repeat(20) { f.claim(expectClaim = false) }
+        assertFalse(f.backend.journal.hasFabCheckoutToResume())
+
+        f.resume(confirmNoManualOrder = true)
+        f.discover()
+        f.ownership()
+        assertEquals(null, f.browser)
+        assertEquals("uncertain", f.entry().getString("status"))
+        assertEquals(1, f.reservations().length())
+        assertEquals(1, f.replies.size)
+        f.coordinator.close()
+    }
+
+    @Test fun confirmedRecoverySkipsFabItemsAlreadyInTheFreshLibrary() = runTest {
+        val f = Fixture(this)
+        f.claim()
+        f.send(f.ready())
+        f.coordinator.back()
+        f.resume(confirmNoManualOrder = true)
+        f.discover()
+        f.ownership(owned = true)
+        assertEquals(null, f.browser)
+        assertEquals("claimed", f.entry().getString("status"))
+        assertEquals(1, f.replies.size)
+        assertEquals(0, f.reservations().length())
         f.coordinator.close()
     }
 
@@ -276,6 +335,11 @@ class FabCoordinatorTest {
         fun claim(expectClaim: Boolean = true) {
             begin(); discover(); ownership()
             if (expectClaim) assertEquals("claim", browser?.mode)
+        }
+        fun resume(confirmNoManualOrder: Boolean) {
+            val command = JSONObject().put("action", "resumeBatch")
+            if (confirmNoManualOrder) command.put("confirmFabCheckoutRunId", backend.journal.current()!!.getString("id"))
+            coordinator.command(command)
         }
         fun ready(stage: String = "product") = JSONObject().put("nonce", browser!!.id).put("type", "actionReady")
             .put("stage", stage).put("fabTier", "personal")

@@ -119,6 +119,8 @@ internal class PocketViewModel(application: Application) : AndroidViewModel(appl
             PocketAction.ClaimSelected -> engine.command(JSONObject().put("action", "claim").put("category", category.wire)
                 .put("keys", JSONArray(selected.filter { key -> currentItems().any { it.key == key && CatalogRules.claimableNow(it, System.currentTimeMillis()) } })))
             PocketAction.ResumeBatch -> engine.command(JSONObject().put("action", "resumeBatch"))
+            is PocketAction.ResumeFabCheckout -> engine.command(JSONObject().put("action", "resumeBatch")
+                .put("confirmFabCheckoutRunId", action.runId))
             is PocketAction.Connect -> send("login", action.category)
             is PocketAction.SwitchAccount -> { selected.clear(); send("switchAccount", action.category) }
             is PocketAction.Logout -> { selected.clear(); send("logout", action.category) }
@@ -153,7 +155,8 @@ internal class PocketViewModel(application: Application) : AndroidViewModel(appl
     }
 
     private fun history(data: PocketBackend): List<ClaimRunUi> {
-        val runs = data.journal?.publicRuns() ?: return emptyList()
+        val journal = data.journal ?: return emptyList()
+        val runs = journal.publicRuns()
         return (0 until runs.length()).map { index ->
             val run = runs.getJSONObject(index)
             val owners = run.getJSONObject("owners")
@@ -169,7 +172,8 @@ internal class PocketViewModel(application: Application) : AndroidViewModel(appl
                     ClaimEntryUi(item.getString("key"), item.getString("title"), Category.fromWire(item.getString("category")),
                         item.getString("status"), item.optString("reason"))
                 }, errors.keys().asSequence().associateWith { errors.getString(it) },
-                run.optString("fabTier").takeIf { it.isNotEmpty() }?.let(FabTier::fromWire))
+                run.optString("fabTier").takeIf { it.isNotEmpty() }?.let(FabTier::fromWire),
+                fabCheckoutRecoverable = index == 0 && journal.hasFabCheckoutToResume())
         }
     }
 
