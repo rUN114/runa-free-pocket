@@ -4,6 +4,7 @@ function runPocketTask(task) {
   let finished = false, busy = false, clickedGet = false, ordered = false, lastNotice = '';
   let authChecked = false;
   let fabOwned = null;
+  let fabCheckoutOfferId;
   const send = (type, data = {}) => PocketStore.postMessage(JSON.stringify({nonce: task.nonce, type, path: location.pathname, ...data}));
   const finish = (type, data) => { if (!finished) { finished = true; send(type, data); } };
   const notice = text => { if (text !== lastNotice) { lastNotice = text; send('waiting', {message: text}); } };
@@ -203,7 +204,20 @@ function runPocketTask(task) {
       });
     }
   }
-  function checkout() {
+  async function fabListingOfferId() {
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(task.item.id)) return null;
+    const listing = await json('/i/listings/' + task.item.id);
+    if (listing?.uid !== task.item.id || !Array.isArray(listing.licenses)) return null;
+    const tiers = listing.licenses.filter(license => license?.slug === task.fabTier);
+    if (tiers.length !== 1) return null;
+    const offerId = tiers[0].offerId;
+    if (typeof offerId !== 'string' || !/^[0-9a-f]{32}$/i.test(offerId)) return null;
+    const normalized = offerId.toLowerCase();
+    const matching = listing.licenses.filter(license =>
+      typeof license?.offerId === 'string' && license.offerId.toLowerCase() === normalized);
+    return matching.length === 1 ? normalized : null;
+  }
+  async function checkout() {
     if (finished || task.mode !== 'claim') return;
     const inPaymentFrame = location.hostname === 'www.epicgames.com' && location.pathname.startsWith('/payment/');
     const inStoreCheckout = location.hostname === 'store.epicgames.com' && location.pathname === '/checkout';
@@ -217,21 +231,37 @@ function runPocketTask(task) {
       buttons(scope).some(button => D.labels.continueBrowsing.test(label(button)));
     if (heading || currentReceipt) { finish('checkoutComplete'); return; }
     if (ordered) return;
+    const submit = buttons(scope).find(b => D.labels.submitOrder.test(label(b)));
+    const addToLibrary = submit && /^(add to library|加入库|添加到库)$/i.test(label(submit));
     if (task.category === 'fab') {
       const orderLicense = scope.querySelector('#license-select');
-      const orderTier = orderLicense ? D.fabTier(licenseText(orderLicense)) : D.fabCheckoutTier(scope.innerText);
+      let orderTier = orderLicense ? D.fabTier(licenseText(orderLicense)) : D.fabCheckoutTier(scope.innerText);
+      // Fab's compact free checkout omits the tier label. Match its single offer to the official listing.
+      if (!orderLicense && !orderTier && inFabCheckout && task.accountId && task.fabTierVerified && addToLibrary &&
+          !/\b(?:licen[sc]e|personal|professional)\b|许可|授权|个人|专业/i.test(scope.innerText) &&
+          D.zeroFreeCheckout(scope.innerText) === true) {
+        const url = new URL(location.href);
+        const offers = url.searchParams.getAll('offers');
+        const offer = offers.length === 1 && /^1-[0-9a-f]{32}-([0-9a-f]{32})--$/i.exec(offers[0]);
+        if (url.origin === 'https://www.fab.com' && url.searchParams.getAll('merchantGroup').join() === 'UE_MKT' && offer) {
+          if (fabCheckoutOfferId === undefined) {
+            fabCheckoutOfferId = await fabListingOfferId();
+            return; // Re-read the page on the next tick before requesting or using a permit.
+          }
+          if (offer[1].toLowerCase() === fabCheckoutOfferId) orderTier = task.fabTier;
+        }
+      }
       if (!task.fabTier || !task.fabTierVerified || orderTier !== task.fabTier) {
         notice('商品页许可尚未确认，或结算许可缺失、不明确、与所选档位不一致；已暂停自动提交');
         return;
       }
     }
-    const submit = buttons(scope).find(b => D.labels.submitOrder.test(label(b)));
     if (!submit || submit.disabled) return;
     const totalState = D.totalState(scope.innerText, task.item.title);
     let free = null;
     if (totalState === 'zero') free = true;
     else if (totalState === 'nonzero') free = false;
-    if (free === null && (inStoreCheckout || inFabCheckout) && /^(add to library|加入库|添加到库)$/i.test(label(submit)))
+    if (free === null && (inStoreCheckout || inFabCheckout) && addToLibrary)
       free = D.zeroFreeCheckout(scope.innerText);
     if (free !== true) {
       if (free === false) finish('blocked', {message: '订单合计不为零，已停止自动下单'});
@@ -270,7 +300,7 @@ function runPocketTask(task) {
           if (me.uid !== task.accountId) throw new Error('Fab 账号已变化，已停止当前项目的自动操作');
         }
         if (isTop && ((task.category === 'fab' && fab) || (task.category !== 'fab' && epic))) await inspectProduct();
-        checkout();
+        await checkout();
       }
     } catch (error) {
       finish('error', {message: error.message});

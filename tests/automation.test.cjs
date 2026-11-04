@@ -10,7 +10,7 @@ function element(text, overrides = {}) {
 }
 async function run({mode='check',category='pc',ctaText='Get',paymentText=null,library=[],fetchError=false,
   libraryPages=null,failLibraryPage=-1,urlOverride=null,authBody='',itemOverrides={},separatePurchaseCard=false,ambiguousCards=false,
-  storeCheckout=false,submitText='Place Order',fabProduct=false,permitActions=true,accountId='',meUid='user-a',fabTier='personal',selectedTier='Personal',checkoutTier='Personal',fabTierVerified=true,nativeSelect=false,selectedPrice='Free -100%'} = {}) {
+  storeCheckout=false,submitText='Place Order',fabProduct=false,permitActions=true,accountId='',meUid='user-a',fabTier='personal',selectedTier='Personal',checkoutTier='Personal',fabTierVerified=true,nativeSelect=false,selectedPrice='Free -100%',fabListing=null,topLevel=true,requiredConsent=false} = {}) {
   const messages = [], ticks = [], requests = [];
   let libraryPage = 0;
   const cta = element(ctaText);
@@ -39,7 +39,13 @@ async function run({mode='check',category='pc',ctaText='Get',paymentText=null,li
     };
   }
   const submit = element(submitText);
-  const payment = paymentText === null ? null : element((category==='fab'?checkoutTier+'\n':'')+paymentText, {querySelector:selector=>selector==='#license-select'&&checkoutTier?element(checkoutTier):null,querySelectorAll:selector=>selector.startsWith('button') ? [submit] : []});
+  const payment = paymentText === null ? null : element((category==='fab'?checkoutTier+'\n':'')+paymentText, {
+    querySelector:selector=>selector==='#license-select'&&checkoutTier?element(checkoutTier):null,
+    querySelectorAll:selector=>{
+      if(selector.startsWith('button')) return [submit];
+      if(selector==='input[type="checkbox"][required]' && requiredConsent) return [{checked:false}];
+      return [];
+    }});
   const doc = {body:storeCheckout&&payment?payment:element(authBody),querySelector:selector=>selector==='main'?main:null,
     querySelectorAll:selector=>selector.includes('dialog')&&payment?[payment]:[]};
   const url = category==='fab' ? 'https://www.fab.com/listings/12345678-abcd-abcd-abcd-123456789012?lang=en' : 'https://store.epicgames.com/en-US/p/test-game';
@@ -55,11 +61,12 @@ async function run({mode='check',category='pc',ctaText='Get',paymentText=null,li
       if (request.includes('/blades/')) return {ok:true,json:async()=>({isLimitedFreeContent:true,blockContentType:'listings',
         tiles:[{listing:{uid:'12345678-abcd-abcd-abcd-123456789012',title:'Test asset'}}]})};
       if (request.includes('/users/me')) return {ok:!fetchError,status:fetchError?401:200,json:async()=>({uid:meUid,displayName:'Test Fab'})};
+      if (fabListing && request === '/i/listings/12345678-abcd-abcd-abcd-123456789012') return {ok:true,json:async()=>fabListing};
       const index=libraryPage++;
       return {ok:!fetchError&&index!==failLibraryPage,status:fetchError?401:index===failLibraryPage?503:200,
         json:async()=>libraryPages?libraryPages[index]:{results:library,cursors:{next:null}}};
     }};
-  context.window = context; context.top = context;
+  context.window = context; context.top = topLevel ? context : {};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(base,'domain.js'),'utf8')+'\n'+fs.readFileSync(path.join(base,'automation.js'),'utf8'), context);
   context.runPocketTask({nonce:'test',mode,category,country:'CN',accountId,fabTier,fabTierVerified,item:{id:'12345678-abcd-abcd-abcd-123456789012',url,...itemOverrides}});
@@ -306,6 +313,50 @@ test('Fab checkout without a selector accepts only an explicit matching summary'
       urlOverride:'https://www.fab.com/payment/web/purchase',paymentText:summary+'\nTotal $0.00'});
     assert.equal(r.submit.clicks, summary==='License: Personal' ? 1 : undefined);
   }
+});
+
+test('Fab free checkout binds the single official offer to the requested listing and license', async () => {
+  const id='12345678-abcd-abcd-abcd-123456789012';
+  const professional='a'.repeat(32), personal='b'.repeat(32), namespace='c'.repeat(32);
+  const fabListing={uid:id,licenses:[{slug:'professional',offerId:professional},{slug:'personal',offerId:personal}]};
+  const checkout='https://www.fab.com/payment/web/purchase';
+  const offers='1-'+namespace+'-'+professional+'--';
+  const url=checkout+'?merchantGroup=UE_MKT&offers='+offers;
+  const freeCard='HK$0.00\nThis is free. Add it to your library to get started.';
+  const options={mode:'claim',category:'fab',accountId:'user-a',fabTier:'professional',storeCheckout:true,
+    checkoutTier:'',submitText:'Add to library',paymentText:freeCard,urlOverride:url,fabListing,topLevel:false};
+  const accepted=await run(options);
+  assert.equal(accepted.submit.clicks,1);
+  await accepted.tick();
+  assert.equal(accepted.submit.clicks,1);
+  for (const override of [
+    {urlOverride:url.replace(professional,personal)},
+    {urlOverride:url+'&offers='+offers},
+    {urlOverride:url+','+offers},
+    {urlOverride:url.replace('offers=1-','offers=2-')},
+    {urlOverride:url.replace('UE_MKT','other')},
+    {urlOverride:url.replace('www.fab.com','www.epicgames.com').replace('/payment/web/purchase','/payment/order')},
+    {fabListing:{...fabListing,uid:'other-listing'}},
+    {fabListing:{...fabListing,licenses:[...fabListing.licenses,{slug:'personal',offerId:professional}]}},
+    {accountId:''},
+    {requiredConsent:true},
+    {fabTierVerified:false},
+    {checkoutTier:'Personal'},
+    {paymentText:'License: Personal\n'+freeCard},
+    {paymentText:'License: Professional\nLicense: Personal\n'+freeCard},
+    {paymentText:freeCard.replace('HK$0.00','HK$1.00')},
+    {paymentText:freeCard+'\nTotal HK$1.00'}
+  ]) {
+    const rejected=await run({...options,...override});
+    assert.equal(rejected.submit.clicks,undefined,JSON.stringify(override));
+  }
+  const changed=await run({...options,permitActions:false});
+  await changed.tick();
+  assert.ok(changed.messages.some(m=>m.type==='actionReady'&&m.stage==='submit'));
+  changed.payment.innerText=freeCard.replace('HK$0.00','HK$1.00');
+  changed.permit('submit');
+  await changed.tick();
+  assert.equal(changed.submit.clicks,undefined);
 });
 test('checkout explains missing, ambiguous and unreadable totals without submitting', async () => {
   for (const [text,reason] of [['Game','缺少'], ['Total $0.00\nTotal $1.00','多条'], ['Total Unavailable','金额']]) {
