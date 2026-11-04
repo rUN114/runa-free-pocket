@@ -6,6 +6,7 @@ import cn.run.freepocket.data.PocketBackend
 import cn.run.freepocket.domain.CatalogRules
 import cn.run.freepocket.model.CatalogItem
 import cn.run.freepocket.model.Category
+import cn.run.freepocket.model.FabTier
 import cn.run.freepocket.model.Ownership
 import cn.run.freepocket.web.BrowserRequest
 import kotlinx.coroutines.CoroutineScope
@@ -464,8 +465,13 @@ internal class ClaimCoordinator(
                 "result" -> {
                     val key = task.item?.key ?: return
                     val status = data.getString("status")
-                    val item = catalogue.find(key)?.copy(status = Ownership.fromWire(status), checkedAt = System.currentTimeMillis(), cached = false,
-                        statusReason = if (task.category == Category.FAB) "Fab 素材库已核实" else "官方商品页面已核实")
+                    val fab = task.category == Category.FAB
+                    val item = catalogue.find(key)?.let {
+                        it.copy(status = Ownership.fromWire(status), checkedAt = System.currentTimeMillis(), cached = false,
+                            statusReason = if (fab) "Fab 素材库已核实" else "官方商品页面已核实",
+                            ownershipAccount = if (fab) task.accountId.ifEmpty { null } else it.ownershipAccount,
+                            fabOwnedTiers = if (fab && status == "owned") FabTier.readOwned(data.optJSONArray("fabOwnedTiers")) else emptySet())
+                    }
                     if (item != null) catalogue.update(item)
                     if (!recordBatchItem(item, status, data.optString("message", "官方页面及库存已核实"))) return
                     completed++; next()
@@ -542,11 +548,15 @@ internal class ClaimCoordinator(
     private fun acceptFabOwnership(data: JSONObject) {
         val acquired = data.getJSONArray("owned")
         val ids = (0 until acquired.length()).map { acquired.getString(it) }.toSet()
+        val tiersByListing = data.optJSONObject("fabTiersByListing")
         val checkedAt = data.getLong("checkedAt")
         val accountId = data.getString("accountId")
         catalogue.store(catalogue.items().map { item ->
-            if (item.category == Category.FAB) item.copy(status = if (item.id in ids) Ownership.OWNED else Ownership.UNOWNED,
-                checkedAt = checkedAt, cached = false, statusReason = "Fab 已获取素材库核实", ownershipAccount = accountId) else item
+            if (item.category != Category.FAB) return@map item
+            val owned = item.id in ids
+            item.copy(status = if (owned) Ownership.OWNED else Ownership.UNOWNED,
+                checkedAt = checkedAt, cached = false, statusReason = "Fab 已获取素材库核实", ownershipAccount = accountId,
+                fabOwnedTiers = if (owned) FabTier.readOwned(tiersByListing?.optJSONArray(item.id)) else emptySet())
         })
         backend.fabAccount = JSONObject().put("connected", true).put("displayName", data.getString("displayName"))
             .put("accountId", accountId).put("checkedAt", checkedAt)

@@ -3,7 +3,7 @@ function runPocketTask(task) {
   const D = PocketDomain;
   let finished = false, busy = false, clickedGet = false, ordered = false, lastNotice = '';
   let authChecked = false;
-  let fabOwned = null;
+  let fabItemOwnership = null;
   let fabCheckoutOfferId;
   const send = (type, data = {}) => PocketStore.postMessage(JSON.stringify({nonce: task.nonce, type, path: location.pathname, ...data}));
   const finish = (type, data) => { if (!finished) { finished = true; send(type, data); } };
@@ -69,20 +69,27 @@ function runPocketTask(task) {
     const me = await json('/i/users/me');
     if (!me || typeof me !== 'object') throw new Error('Fab 登录状态无法确认');
     if (task.accountId && me.uid !== task.accountId) throw new Error('Fab 账号已变化，请返回列表并重新核实账号');
-    const owned = new Set(), cursors = new Set();
+    const owned = new Set(), cursors = new Set(), tiersByListing = new Map();
     let url = '/i/library/search?count=100&source=acquired';
     for (let page = 0; page < 200; page++) {
       const data = await json(url);
       if (!Array.isArray(data.results)) throw new Error('Fab 素材库格式已变化，无法确认拥有状态');
       for (const entry of data.results) {
         if (entry.uid) owned.add(entry.uid);
-        if (entry.listing?.uid) owned.add(entry.listing.uid);
+        const listingId = entry.listing?.uid;
+        if (!listingId) continue;
+        owned.add(listingId);
+        const licenses = entry.entitlement?.licenses;
+        if (!Array.isArray(licenses)) continue;
+        const tiers = licenses.filter(license => license?.group?.slug === 'standard' &&
+          (license.slug === 'personal' || license.slug === 'professional')).map(license => license.slug);
+        if (tiers.length) tiersByListing.set(listingId, [...new Set([...(tiersByListing.get(listingId) || []), ...tiers])]);
       }
       const next = data.cursors?.next;
       if (!next) {
         if (data.results.length === 100 && !data.cursors) throw new Error('素材库缺少分页信息，暂不能判定未拥有');
         if (typeof me.uid !== 'string' || !me.uid) throw new Error('Fab 账号标识缺失，无法安全绑定领取记录');
-        return {owned, accountId: me.uid, displayName: me.displayName || me.username || me.sellerName || 'Fab 账号'};
+        return {owned, tiersByListing, accountId: me.uid, displayName: me.displayName || me.username || me.sellerName || 'Fab 账号'};
       }
       if (cursors.has(next)) throw new Error('素材库分页重复，暂不能确认拥有状态');
       cursors.add(next);
@@ -90,7 +97,10 @@ function runPocketTask(task) {
     }
     throw new Error('素材库分页数量超出本次核实范围');
   }
-  async function fabOwnership() { return (await fabLibrary()).owned.has(task.item.id); }
+  async function fabOwnership() {
+    const library = await fabLibrary();
+    return {owned: library.owned.has(task.item.id), fabOwnedTiers: library.tiersByListing.get(task.item.id) || []};
+  }
   async function auth() {
     if (task.category === 'fab' && location.hostname === 'www.fab.com') {
       if (authChecked) return;
@@ -158,8 +168,8 @@ function runPocketTask(task) {
         if (libraryLink) finish('checkoutComplete');
         return;
       }
-      if (fabOwned === null) fabOwned = await fabOwnership();
-      if (fabOwned) { finish('result', {status: 'owned'}); return; }
+      if (fabItemOwnership === null) fabItemOwnership = await fabOwnership();
+      if (fabItemOwnership.owned) { finish('result', {status: 'owned', fabOwnedTiers: fabItemOwnership.fabOwnedTiers}); return; }
       if (task.mode === 'check') { finish('result', {status: 'unowned'}); return; }
       const current = D.parseFab(await json('/i/blades/free_content_blade'));
       if (!current.some(x => x.id === task.item.id)) { finish('result', {status: 'expired', message: '该素材已不在限时免费活动中'}); return; }
@@ -291,7 +301,8 @@ function runPocketTask(task) {
         await auth();
       } else if (isTop && task.mode === 'syncFab' && fab) {
         const library = await fabLibrary();
-        finish('ownership', {owned: [...library.owned], checkedAt: Date.now(), accountId: library.accountId, displayName: library.displayName});
+        finish('ownership', {owned: [...library.owned], fabTiersByListing: Object.fromEntries(library.tiersByListing),
+          checkedAt: Date.now(), accountId: library.accountId, displayName: library.displayName});
       } else if (isTop && task.mode === 'discover' && ((task.category === 'fab' && fab) || (task.category !== 'fab' && epic))) {
         await discover();
       } else if (task.mode === 'check' || task.mode === 'claim') {

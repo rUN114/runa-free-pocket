@@ -34,6 +34,25 @@ class FabCoordinatorTest {
         f.coordinator.close()
     }
 
+    @Test fun ownershipRefreshKeepsOfficialTiersOnlyForOwnedItemsAndReplacesThemOnAccountChange() = runTest {
+        val f = Fixture(this)
+        f.begin()
+        f.discover()
+        val tiers = JSONObject().put(ID, JSONArray().put("professional").put("personal").put("unknown-tier"))
+            .put("other-material", JSONArray().put("professional"))
+        f.ownership(owned = true, fabTiersByListing = tiers)
+        val item = f.backend.items.getJSONObject(0)
+        val displayTiers = item.getJSONArray("fabOwnedTiers")
+        assertEquals(setOf("personal", "professional"), (0 until displayTiers.length()).map(displayTiers::getString).toSet())
+        assertFalse(f.backend.items.getJSONObject(1).has("fabOwnedTiers"))
+
+        f.coordinator.command(JSONObject().put("action", "check").put("category", "fab"))
+        f.ownership(account = "another-library", owned = true)
+        assertEquals("another-library", f.backend.items.getJSONObject(0).getString("ownershipAccount"))
+        assertFalse(f.backend.items.getJSONObject(0).has("fabOwnedTiers"))
+        f.coordinator.close()
+    }
+
     @Test fun changedLibraryUidCannotContinueAnOldRun() = runTest {
         val f = Fixture(this)
         f.claim()
@@ -327,10 +346,10 @@ class FabCoordinatorTest {
             send(JSONObject().put("nonce", browser!!.id).put("type", "catalogue").put("items", catalogue()))
             assertEquals("syncFab", browser!!.mode)
         }
-        fun ownership(account: String = ACCOUNT, owned: Boolean = false) {
+        fun ownership(account: String = ACCOUNT, owned: Boolean = false, fabTiersByListing: JSONObject? = null) {
             send(JSONObject().put("nonce", browser!!.id).put("type", "ownership").put("accountId", account)
                 .put("displayName", "Local test account").put("checkedAt", checkedAt)
-                .put("owned", if (owned) JSONArray().put(ID) else JSONArray()))
+                .put("owned", if (owned) JSONArray().put(ID) else JSONArray()).put("fabTiersByListing", fabTiersByListing))
         }
         fun claim(expectClaim: Boolean = true) {
             begin(); discover(); ownership()

@@ -1,5 +1,7 @@
 package cn.run.freepocket.model
 
+import org.json.JSONArray
+
 enum class Category(val wire: String) {
     PC("pc"), ANDROID("android"), FAB("fab");
 
@@ -33,5 +35,12 @@ enum class FabTier(val wire: String) {
     companion object {
         fun fromWire(value: String): FabTier = entries.firstOrNull { it.wire == value }
             ?: throw IllegalArgumentException("未知 Fab 许可：$value")
+
+        internal fun readOwned(values: JSONArray?): Set<FabTier> {
+            if (values == null) return emptySet()
+            return entries.filterTo(linkedSetOf()) { tier ->
+                (0 until values.length()).any { values.opt(it) == tier.wire }
+            }
+        }
     }
 }

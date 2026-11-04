@@ -10,6 +10,7 @@
     <string name="native_login_claim">登录并领取 · %1$d</string><string name="native_working">正在处理…</string>
     <string name="native_active">当前限免 · %1$d 项</string><string name="native_upcoming">即将推出 · %1$d 项</string>
     <string name="native_owned">已拥有</string><string name="native_fab_owned">素材已拥有 · 档位未知</string><string name="native_unknown">拥有状态未确认</string>
+    <string name="native_fab_owned_tiers">素材已拥有 · %1$s</string>
     <string name="native_unowned">未拥有</string><string name="native_partial">部分已拥有</string><string name="native_expired">活动已结束</string><string name="native_status_error">拥有状态同步失败</string>
     <string name="native_cached">%1$s · 缓存</string><string name="native_checked">已核实 %1$s</string><string name="native_last_sync">上次同步 %1$s</string>
     <string name="native_starts">%1$s 开始 · 暂不可领取</string><string name="native_free">限时免费</string><string name="native_ends">%1$s · %2$s 结束</string>

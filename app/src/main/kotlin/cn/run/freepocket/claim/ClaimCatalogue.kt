@@ -22,7 +22,8 @@ internal class ClaimCatalogue(private val backend: PocketBackend) {
                 throw JSONException("商品地址不属于官方商城")
             }
         }
-        store(items().filter { it.category != category } + fresh.distinctBy { it.key }.map { it.copy(status = Ownership.UNKNOWN) })
+        store(items().filter { it.category != category } + fresh.distinctBy { it.key }
+            .map { it.copy(status = Ownership.UNKNOWN, fabOwnedTiers = emptySet()) })
         backend.saveCache()
     }
 
@@ -33,7 +34,8 @@ internal class ClaimCatalogue(private val backend: PocketBackend) {
     fun invalidate(category: Category? = null, epic: Boolean = false) {
         store(items().map { item ->
             val matches = if (epic) item.category != Category.FAB else category == null || item.category == category
-            if (matches) item.copy(status = Ownership.UNKNOWN, checkedAt = null, cached = false, statusReason = "", ownershipAccount = null) else item
+            if (matches) item.copy(status = Ownership.UNKNOWN, checkedAt = null, cached = false, statusReason = "",
+                ownershipAccount = null, fabOwnedTiers = emptySet()) else item
         })
     }
 

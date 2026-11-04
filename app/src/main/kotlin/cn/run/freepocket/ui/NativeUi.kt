@@ -10,6 +10,7 @@ import cn.run.freepocket.domain.CatalogRules
 import cn.run.freepocket.model.Availability
 import cn.run.freepocket.model.CatalogItem
 import cn.run.freepocket.model.Category
+import cn.run.freepocket.model.FabTier
 import cn.run.freepocket.model.Ownership
 import java.text.DateFormat
 import java.util.Date
@@ -31,7 +32,15 @@ internal fun CatalogItem.ownershipLabel(context: Context): String {
         Ownership.ERROR -> R.string.native_status_error
         Ownership.UNKNOWN -> R.string.native_unknown
     }
-    val label = context.getString(resource)
+    val label = if (resource == R.string.native_fab_owned && fabOwnedTiers.isNotEmpty()) {
+        val tiers = fabOwnedTiers.joinToString("、") { tier ->
+            context.getString(when (tier) {
+                FabTier.PERSONAL -> R.string.native_tier_personal
+                FabTier.PROFESSIONAL -> R.string.native_tier_professional
+            })
+        }
+        context.getString(R.string.native_fab_owned_tiers, tiers)
+    } else context.getString(resource)
     return if (cached) context.getString(R.string.native_cached, label) else label
 }
 

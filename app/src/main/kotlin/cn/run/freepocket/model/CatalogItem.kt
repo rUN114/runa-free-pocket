@@ -29,7 +29,8 @@ data class CatalogItem(
     val checkedAt: Long? = null,
     val cached: Boolean = false,
     val statusReason: String = "",
-    val ownershipAccount: String? = null
+    val ownershipAccount: String? = null,
+    val fabOwnedTiers: Set<FabTier> = emptySet()
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("key", key)
@@ -56,6 +57,7 @@ data class CatalogItem(
         put("cached", cached)
         put("statusReason", statusReason)
         if (ownershipAccount != null) put("ownershipAccount", ownershipAccount)
+        if (fabOwnedTiers.isNotEmpty()) put("fabOwnedTiers", JSONArray(fabOwnedTiers.map(FabTier::wire)))
     }
 
     companion object {
@@ -91,7 +93,9 @@ data class CatalogItem(
                 checkedAt = parseCatalogTime(value.opt("checkedAt"), "拥有状态同步时间"),
                 cached = value.optBoolean("cached", false),
                 statusReason = value.text("statusReason"),
-                ownershipAccount = if (value.isNull("ownershipAccount")) null else value.getString("ownershipAccount")
+                ownershipAccount = if (value.isNull("ownershipAccount")) null else value.getString("ownershipAccount"),
+                fabOwnedTiers = if (category == Category.FAB && value.optString("status") == "owned")
+                    FabTier.readOwned(value.optJSONArray("fabOwnedTiers")) else emptySet()
             )
         }
     }

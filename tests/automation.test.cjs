@@ -206,6 +206,21 @@ test('Fab: acquired listing ID confirms ownership', async () => {
 test('Fab: an empty authenticated library means unowned', async () => {
   const result = await run({category:'fab'}); assert.equal(result.messages[0].status,'unowned');
 });
+
+test('Fab publishes acquired license tiers for the exact listing, including multiple tiers', async () => {
+  const id='12345678-abcd-abcd-abcd-123456789012';
+  const grant=slug=>({slug,group:{slug:'standard'}});
+  const libraryPages=[
+    {results:[{uid:'acquisition-a',listing:{uid:id},entitlement:{licenses:[grant('professional'),grant('future-tier')]}}],cursors:{next:'next'}},
+    {results:[{uid:'acquisition-b',listing:{uid:id},entitlement:{licenses:[grant('personal'),grant('professional')]}},
+      {uid:'other-acquisition',listing:{uid:'other-listing'},licenses:[grant('professional')]}],cursors:{next:null}}
+  ];
+  const synced=await run({category:'fab',mode:'syncFab',libraryPages});
+  assert.deepEqual(synced.messages[0].fabTiersByListing,{[id]:['professional','personal']});
+  const checked=await run({category:'fab',libraryPages});
+  assert.equal(checked.messages[0].status,'owned');
+  assert.deepEqual(checked.messages[0].fabOwnedTiers,['professional','personal']);
+});
 test('Fab: HTTP 401 is a failure, never an empty library or an unowned result', async () => {
   const result = await run({category:'fab',fetchError:true});
   assert.equal(result.messages[0].type,'error'); assert.match(result.messages[0].message,/401/);
