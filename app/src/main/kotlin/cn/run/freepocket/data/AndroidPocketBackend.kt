@@ -1,6 +1,7 @@
 package cn.run.freepocket.data
 
 import android.content.Context
+import androidx.core.content.edit
 import cn.run.freepocket.ClaimJournal
 import cn.run.freepocket.EpicPublicApi
 import cn.run.freepocket.EpicSession
@@ -53,7 +54,7 @@ internal class AndroidPocketBackend(context: Context) : PocketBackend {
         try {
             session = EpicSession(application)
         } catch (_: Exception) {
-            application.getSharedPreferences("epic-auth", Context.MODE_PRIVATE).edit().remove("encrypted").apply()
+            application.getSharedPreferences("epic-auth", Context.MODE_PRIVATE).edit { remove("encrypted") }
             initialMessage = "本机授权记录无法读取，请重新连接 Epic 账号。"
             session = EpicSession(application)
         }
@@ -71,9 +72,14 @@ internal class AndroidPocketBackend(context: Context) : PocketBackend {
     }
     override fun scriptSource(): String = automation
     override fun saveCache() {
-        cache.edit().putInt("schema", 3).putString("items", items.toString())
-            .putString("updated", updated.toString()).putString("country", country)
-            .putString("fabTier", fabTier).putString("fabAccount", fabAccount.toString()).apply()
+        cache.edit {
+            putInt("schema", 3)
+            putString("items", items.toString())
+            putString("updated", updated.toString())
+            putString("country", country)
+            putString("fabTier", fabTier)
+            putString("fabAccount", fabAccount.toString())
+        }
     }
     // Deliberate durability barrier before page permits. Device cost and the retained
     // main-thread trade-off are recorded in docs/NATIVE-REVIEW-2026-11-01.md.

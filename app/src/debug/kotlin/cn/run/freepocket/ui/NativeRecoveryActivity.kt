@@ -197,9 +197,9 @@ class NativeRecoveryActivity : Activity() {
     }
 
     private inner class DiagnosticBackend(override val journal: ClaimJournal) : PocketBackend {
-        override var items = JSONArray().put(item().toJson())
+        override var items: JSONArray = JSONArray().put(item().toJson())
         override var updated = JSONObject()
-        override var fabAccount = JSONObject().put("connected", true).put("accountId", "diagnostic-owner").put("displayName", "诊断账号")
+        override var fabAccount: JSONObject = JSONObject().put("connected", true).put("accountId", "diagnostic-owner").put("displayName", "诊断账号")
         override var country = "CN"
         override var fabTier = "personal"
         override var journalError = ""

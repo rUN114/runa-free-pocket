@@ -12,8 +12,8 @@ android {
         applicationId 'cn.run.freepocket'
         minSdk 26
         targetSdk 35
-        versionCode 16
-        versionName '1.1.3'
+        versionCode 17
+        versionName '1.1.4'
         testInstrumentationRunner 'cn.run.freepocket.tests.NativeVerification'
     }
     testBuildType providers.gradleProperty('runaTestBuildType').getOrElse('release')

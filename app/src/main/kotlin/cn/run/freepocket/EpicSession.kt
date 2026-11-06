@@ -1,5 +1,7 @@
 package cn.run.freepocket
 
+import androidx.core.content.edit
+
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -61,7 +63,7 @@ constructor(private val context: Context) {
 
     fun disconnect() {
         saved = null
-        context.getSharedPreferences("epic-auth", Context.MODE_PRIVATE).edit().remove("encrypted").apply()
+        context.getSharedPreferences("epic-auth", Context.MODE_PRIVATE).edit { remove("encrypted") }
     }
 
     @Throws(GeneralSecurityException::class, IOException::class)
@@ -73,8 +75,9 @@ constructor(private val context: Context) {
         val blob = ByteArray(iv.size + encrypted.size)
         System.arraycopy(iv, 0, blob, 0, iv.size)
         System.arraycopy(encrypted, 0, blob, iv.size, encrypted.size)
-        context.getSharedPreferences("epic-auth", Context.MODE_PRIVATE).edit()
-            .putString("encrypted", Base64.encodeToString(blob, Base64.NO_WRAP)).apply()
+        context.getSharedPreferences("epic-auth", Context.MODE_PRIVATE).edit {
+            putString("encrypted", Base64.encodeToString(blob, Base64.NO_WRAP))
+        }
         saved = value
     }
 
