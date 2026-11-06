@@ -1,0 +1,19 @@
+name: upstream-shape-probe
+
+# Read-only check that the public Epic/Fab endpoints still match the response shapes
+# our adapters parse. Schedule runs only on the default branch, so this minimal
+# workflow lives here independently of the native app's development branch.
+on:
+  schedule:
+    - cron: '0 21 * * 1'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only upstream shape probe
+        run: |
+          python3 tests/upstream/test_probe.py
+          python3 tests/upstream/probe.py
