@@ -198,3 +198,41 @@ test('an active mobile Claim takes precedence over a later free price and malfor
   content.purchase=[{...future,purchaseStateEffectiveDate:'broken-date'}];
   assert.equal(D.parseMobile(data,now).length,0);
 });
+
+
+test('a product title beginning with Total is excluded without hiding real duplicate totals', () => {
+  assert.equal(D.zeroTotal('Total War\nTotal\n$0.00', 'Total War'), true);
+  assert.equal(D.zeroTotal('Total War\nTotal $0.00\nTotal $4.00', 'Total War'), null);
+  assert.equal(D.zeroTotal('Total War\nTotal $4.00', 'Total War'), false);
+});
+test('checkout totals explain missing, ambiguous and unreadable amounts', () => {
+  assert.equal(D.totalState('Game'), 'missing');
+  assert.equal(D.totalState('Total $0.00\nTotal $1.00'), 'ambiguous');
+  assert.equal(D.totalState('Total\nUnavailable'), 'unreadable');
+  assert.equal(D.totalState('Total ￥0.00'), 'zero');
+  assert.equal(D.totalState('Total $0.01'), 'nonzero');
+});
+test('Chinese explicit free checkout still requires exactly one zero currency amount', () => {
+  const text = price => '这是免费的。将其添加到您的游戏库即可开始。\n' + price;
+  assert.equal(D.zeroFreeCheckout(text('￥0.00')), true);
+  assert.equal(D.zeroFreeCheckout(text('￥1.00')), false);
+  assert.equal(D.zeroFreeCheckout(text('￥0.00\n￥1.00')), null);
+  assert.equal(D.zeroFreeCheckout('介绍里说免费\n￥0.00'), null);
+});
+test('Fab checkout summary must identify one explicit license tier', () => {
+  assert.equal(D.fabCheckoutTier('Asset\nLicense: Professional\nTotal $0.00'), 'professional');
+  assert.equal(D.fabCheckoutTier('许可类型：Personal\nTotal $0.00'), 'personal');
+  assert.equal(D.fabCheckoutTier('Professional\nPersonal'), '');
+  assert.equal(D.fabCheckoutTier('Professional asset tools\nTotal $0.00'), '');
+});
+
+test('a title that itself looks like a monetary total cannot hide an actual total', () => {
+  assert.equal(D.zeroTotal('Total $5.00\nTotal $0.00', 'Total $5.00'), null);
+  assert.equal(D.zeroTotal('Total\nTotal\n$0.00', 'Total'), null);
+});
+test('Fab summary rejects bare tier titles and duplicate license summaries', () => {
+  assert.equal(D.fabCheckoutTier('Personal\nTotal $0.00'), '');
+  assert.equal(D.fabCheckoutTier('Professional\nTotal $0.00'), '');
+  assert.equal(D.fabCheckoutTier('License: Personal\nLicense: Personal'), '');
+  assert.equal(D.fabCheckoutTier('Professional License\nTotal $0.00'), 'professional');
+});

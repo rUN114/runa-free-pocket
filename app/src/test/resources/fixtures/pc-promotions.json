@@ -1,0 +1,124 @@
+{
+  "data": {
+    "Catalog": {
+      "searchStore": {
+        "elements": [
+          {
+            "id": "offer-alpha",
+            "namespace": "ns-alpha",
+            "title": "Sample Game Alpha",
+            "description": "Sample description <b>with markup</b> and whitespace   noise.",
+            "seller": {"name": "Sample Seller"},
+            "catalogNs": {"mappings": [{"pageSlug": "sample-alpha"}]},
+            "offerMappings": [{"pageType": "productHome", "pageSlug": "sample-alpha"}],
+            "items": [{"id": "ent-alpha", "namespace": "ns-alpha"}],
+            "price": {"totalPrice": {"discountPrice": 0, "fmtPrice": {"originalPrice": "$19.99"}}},
+            "promotions": {
+              "promotionalOffers": [
+                {"promotionalOffers": [
+                  {"startDate": "2026-10-15T15:00:00Z", "endDate": "2026-10-22T15:00:00Z",
+                   "discountSetting": {"discountPercentage": 0, "type": "PERCENTAGE"}}
+                ]}
+              ],
+              "upcomingPromotionalOffers": []
+            },
+            "keyImages": [
+              {"type": "OfferImageWide", "url": "https://cdn1.epicgames.com/epic/offer/alpha-wide.png"},
+              {"type": "featuredMedia", "url": "https://cdn1.epicgames.com/epic/offer/alpha-shot.png"},
+              {"type": "Screenshot", "url": "https://cdn1.epicgames.com/epic/offer/alpha-shot.png"},
+              {"type": "Screenshot", "url": "https://images.example.com/not-official.png"}
+            ]
+          },
+          {
+            "id": "offer-beta",
+            "namespace": "ns-beta",
+            "title": "Sample Game Beta",
+            "description": "Upcoming sample with no artwork yet.",
+            "seller": {"name": "Sample Seller"},
+            "productSlug": "sample-beta",
+            "offerMappings": [],
+            "catalogNs": {"mappings": []},
+            "items": [{"id": "ent-beta", "namespace": "ns-beta"}],
+            "price": {"totalPrice": {"discountPrice": 100, "fmtPrice": {"originalPrice": "$29.99"}}},
+            "promotions": {
+              "promotionalOffers": [],
+              "upcomingPromotionalOffers": [
+                {"promotionalOffers": [
+                  {"startDate": "2026-10-20T15:00:00Z", "endDate": "2026-10-27T15:00:00Z",
+                   "discountSetting": {"discountPercentage": 0, "type": "PERCENTAGE"}}
+                ]}
+              ]
+            },
+            "keyImages": []
+          },
+          {
+            "id": "offer-paid",
+            "namespace": "ns-paid",
+            "title": "Sample Game Paid",
+            "description": "Zero-percent promotion still on a paid offer.",
+            "seller": {"name": "Sample Seller"},
+            "productSlug": "sample-paid",
+            "offerMappings": [],
+            "catalogNs": {"mappings": []},
+            "items": [{"id": "ent-paid", "namespace": "ns-paid"}],
+            "price": {"totalPrice": {"discountPrice": 100, "fmtPrice": {"originalPrice": "$39.99"}}},
+            "promotions": {
+              "promotionalOffers": [
+                {"promotionalOffers": [
+                  {"startDate": "2026-10-15T15:00:00Z", "endDate": "2026-10-22T15:00:00Z",
+                   "discountSetting": {"discountPercentage": 0, "type": "PERCENTAGE"}}
+                ]}
+              ],
+              "upcomingPromotionalOffers": []
+            },
+            "keyImages": []
+          },
+          {
+            "id": "offer-partial",
+            "namespace": "ns-partial",
+            "title": "Sample Game Partial",
+            "description": "Only half off; never a free claim.",
+            "seller": {"name": "Sample Seller"},
+            "productSlug": "sample-partial",
+            "offerMappings": [],
+            "catalogNs": {"mappings": []},
+            "items": [{"id": "ent-partial", "namespace": "ns-partial"}],
+            "price": {"totalPrice": {"discountPrice": 2000, "fmtPrice": {"originalPrice": "$39.99"}}},
+            "promotions": {
+              "promotionalOffers": [
+                {"promotionalOffers": [
+                  {"startDate": "2026-10-15T15:00:00Z", "endDate": "2026-10-22T15:00:00Z",
+                   "discountSetting": {"discountPercentage": 50, "type": "PERCENTAGE"}}
+                ]}
+              ],
+              "upcomingPromotionalOffers": []
+            },
+            "keyImages": []
+          },
+          {
+            "id": "offer-expired",
+            "namespace": "ns-expired",
+            "title": "Sample Game Expired",
+            "description": "The free window already closed.",
+            "seller": {"name": "Sample Seller"},
+            "productSlug": "sample-expired",
+            "offerMappings": [],
+            "catalogNs": {"mappings": []},
+            "items": [{"id": "ent-expired", "namespace": "ns-expired"}],
+            "price": {"totalPrice": {"discountPrice": 0, "fmtPrice": {"originalPrice": "$19.99"}}},
+            "promotions": {
+              "promotionalOffers": [
+                {"promotionalOffers": [
+                  {"startDate": "2026-10-01T00:00:00Z", "endDate": "2026-10-10T00:00:00Z",
+                   "discountSetting": {"discountPercentage": 0, "type": "PERCENTAGE"}}
+                ]}
+              ],
+              "upcomingPromotionalOffers": []
+            },
+            "keyImages": []
+          }
+        ]
+      }
+    }
+  }
+}

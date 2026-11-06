@@ -1,0 +1,57 @@
+package cn.run.freepocket.web
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class BrowserPagePolicyTest {
+    @Test fun initialRequestsRequireExactOfficialHttpsOrigin() {
+        for (host in listOf("store.epicgames.com", "www.epicgames.com", "www.fab.com")) {
+            assertTrue(BrowserPagePolicy.canStartRequest("https://$host/path"))
+            assertTrue(BrowserPagePolicy.canStartRequest("https://${host}:443/path"))
+        }
+        for (url in listOf("https://example.com", "https://www.fab.com.evil.test",
+            "https://user:secret@www.fab.com/", "https://user@www.fab.com/listings/id",
+            "https://www.fab.com:444/", "https://www.fab.com:8443/login",
+            "http://www.fab.com/", "https:", "https://[", "not a url")) {
+            assertFalse(url, BrowserPagePolicy.canStartRequest(url))
+        }
+        assertTrue(BrowserPagePolicy.canStartRequest("https://www.epicgames.com/id/login?state=secret"))
+        // HTTPS links inside a task page may navigate, but cannot become an application task start.
+        assertTrue(BrowserPagePolicy.canNavigate("https://external.example/legal"))
+        assertTrue(BrowserPagePolicy.canNavigate("https://external-payment.example/path"))
+    }
+    @Test fun allowsHttpsNavigationButRejectsLocalAndExecutableSchemes() {
+        assertTrue(BrowserPagePolicy.canNavigate("https://www.epicgames.com/id/login?code=secret"))
+        for (url in listOf("http://www.fab.com/", "file:///sdcard/token", "content://accounts/1",
+            "javascript:alert(1)", "intent://login", "https:", "not a url")) {
+            assertFalse(url, BrowserPagePolicy.canNavigate(url))
+        }
+    }
+
+    @Test fun diagnosticsNeverDisplayAuthorizationQueryOrUserInfo() {
+        assertEquals("www.epicgames.com", BrowserPagePolicy.displayHost(
+            "https://user:secret@www.epicgames.com/id/redirect?code=authorization#token"))
+        assertEquals("", BrowserPagePolicy.displayHost("not a valid url?code=secret"))
+    }
+
+    @Test fun displaysOnlyRecognizedNetworkCodeOrNumericFallback() {
+        assertEquals("net::ERR_CONNECTION_RESET", BrowserPagePolicy.networkCode(
+            "net::ERR_CONNECTION_RESET at https://www.epicgames.com/?code=secret", -6))
+        assertEquals("WebView -2", BrowserPagePolicy.networkCode(
+            "Unknown failure at https://www.fab.com/?code=secret", -2))
+    }
+
+    @Test fun automaticallyRetriesOnlySafeReadsAndOnlyOnce() {
+        for (mode in listOf("auth", "discover", "syncFab")) {
+            assertTrue(BrowserPagePolicy.shouldRetry(mode, -6, false))
+            assertTrue(BrowserPagePolicy.shouldRetry(mode, -8, false))
+            assertFalse(BrowserPagePolicy.shouldRetry(mode, -6, true))
+        }
+        for (mode in listOf("claim", "check", "manual", "authorizing")) {
+            assertFalse(BrowserPagePolicy.shouldRetry(mode, -6, false))
+        }
+        assertFalse(BrowserPagePolicy.shouldRetry("discover", -11, false))
+    }
+}

@@ -1,19 +1,33 @@
+> 当前1.1.0的构建、归档及验证边界见[交付记录](DELIVERY-1.1.0.md)；此前设备检查见 [NATIVE-REVIEW-2026-11-01.md](NATIVE-REVIEW-2026-11-01.md) 和 [设备脚本](../tests/device/README.md)。
+
+> 原生版新增验证与设备测试入口见 [NATIVE-VERIFY-2026-11-01.md](NATIVE-VERIFY-2026-11-01.md)。下文历史ReleaseVerification操作仅适用于旧网页界面版本；当前主界面使用NativeVerification debug诊断测试，非调试包通过系统UI自动化检查，避免为测试保留生产类名和方法。
+
 # 测试与签名
 
 ## 常规检查
 
-需要 JDK 17+ 和 Android SDK 35。`tests/run-tests.ps1` 执行 JavaScript 与独立分页检查；Gradle 默认的单元测试变体为 Release。
+需要 JDK 17+ 和 Android SDK 35。`tests/run-tests.ps1` 执行 JavaScript 检查，拥有凭证分页检查在 Gradle 单元测试中；Gradle 默认的单元测试变体为 Release。本机命令行构建需 `GRADLE_USER_HOME=D:\Android\Gradle`（默认用户目录的 9.8.2 发行包不完整）。
 
 ```powershell
 ./tests/run-tests.ps1
 ./gradlew.bat testReleaseUnitTest lintRelease
 ```
 
+## 共享样本与上游探针（2026-11-02）
+
+`app/src/test/resources/fixtures/pc-promotions.json` 是 JS 与 Kotlin 两个 PC 解析器共用的唯一样本（结构对齐 Epic 活动接口真实字段；本机当前网络受限，未抓取当日真实响应，日期统一为严格 ISO-8601 UTC，历元毫秒只属于缓存边界）。两侧消费方分别是 `tests/shared-fixture.test.cjs` 和 `CatalogRulesTest.sharedFixtureKeepsKotlinAndJavaScriptParsersInAgreement`；改任一解析器时两边同时验证，防止漂移。
+
+官方页面按钮文案集中为 `PocketDomain.labels`（按领取/已拥有/不可用/提交订单分组），`automation.js` 只引用不改写；词汇契约由共享样本测试断言。
+
+离线样本只能发现回归，发现不了官网改版。`python tests/upstream/probe.py` 只读请求三个公开端点，不发Cookie、账号数据或订单；Fab无会话401/403只标记authWall，不代表其内容结构已经验证。13项探针异常样本与2项设备摘要测试随 `run-tests.ps1` 运行；开发分支的 `.github/workflows/tests.yml` 同时运行这些Python测试、JS、JVM、Lint及未签名release构建。每周一21:00 UTC（北京时间周二05:00）在线探针仅由默认分支 `.github/workflows/upstream-probe.yml` 负责，也可手动触发。探针失败需先区分网络/登录限制和数据结构变化，再决定是否更新适配器。
+
+领取状态机的许可生命周期与三条不变量见 [CLAIM-STATE-MACHINE.md](CLAIM-STATE-MACHINE.md)。
+
 浏览器界面测试使用可选的 Playwright 1.62.1 与已安装的 Edge，不调用官方领取接口，数据明确为示例。
 
 ```powershell
 npm install --no-save --package-lock=false playwright@1.62.1
-node tests/browser/ui.cjs
+./tests/run-tests.ps1 -Browser
 ```
 
 ## 正式签名
@@ -71,6 +85,36 @@ adb shell am instrument -w -e mode fixture cn.run.freepocket.test/cn.run.freepoc
 
 正式签名与诊断签名不同，在独立设备上分别测试，不互相覆盖。运行时及构建证据应分别记录版本、APK 哈希、签名和测试范围。
 
+`windowFixture` 使用目标应用的商店 WebView，并拦截本机窗口测试的全部页面请求，验证没有触摸手势时能否打开窗口。应用启动仍可能读取官方目录或库存；夹具不请求真实订单。
+
+```powershell
+adb shell am instrument -w -e mode windowFixture cn.run.freepocket.test/cn.run.freepocket.tests.ReleaseVerification
+```
+
+`savedStateSnapshot` 只导出已保存的目录与账本，不启动界面、恢复 Cookie、同步库存或领取。输出含账号标识，只保存在本机私密测试目录，不直接上传。快照抓取时间不能代替条目的实际同步时间。
+
+```powershell
+adb shell am instrument -w -e mode savedStateSnapshot cn.run.freepocket.test/cn.run.freepocket.tests.ReleaseVerification
+```
+
+2026-10-31 的真实新订单、已拥有跳过及未验证部分见 [真实账号验证记录](LIVE-VERIFY-2026-10-31.md)。
+
 ## 1.0.0 的实际边界
 
 正式包在独立 MuMu Android 12 / WebView 110 上，完成真实库存、全部已拥有跳过、进程中断恢复、完整模拟器关机重启与竖屏图片检查。原生许可桥接在诊断构建的本机页面验证。账号当时已拥有全部本期内容，没有新的真实订单；当前用户手机未连接测试。参照历史 0.3.2 新订单记录不能替代本版的新订单实测。
+
+## Fab 账号标识与凭据
+
+Epic 的 OAuth 令牌经 Android KeyStore 的 AES/GCM 密钥加密保存。Fab 的登录凭据是 WebView 管理的 Cookie，不是 `accountId`；Cookie 保存在应用私有 WebView 数据中，不能据此宣称 Cookie 也经过 KeyStore 加密。
+
+Fab 的 `accountId`、显示名和同步时间作为库存及领取记录的绑定元数据存于应用私有 preferences。账号标识本身不能登录或领取，拥有状态查询仍需要有效 Cookie；它仍属于账号信息，不应写入公开日志或上传报告。发送到前端的 Fab 状态会删除内部 `accountId`。
+
+## 1.0.1 审核修复回归
+
+浏览器测试覆盖 320/360/390/480 宽度、数字价格和状态更新时清除已拥有/过期/已移除选择。`-Browser` 显式启用该测试，缺少 Playwright 或浏览器会报错，不会把跳过当作通过。
+
+Fab 结算必须具有本次商品页许可确认，还须从结算许可控件或明确且唯一的许可摘要中核对同一档位。官方 Fab 单项零元结算卡片未显示档位时，可以用结算报价编号与官方商品接口的同商品、同档位报价编号精确匹配。无法确认时暂停，不凭商品介绍中的 Personal/Professional 字样推断。英文免费卡片及已支持的中文文案均须有唯一且明确的零元货币金额；未支持的布局仍暂停。
+
+商店消息按任务类型、来源和主/子帧身份核对，Epic 的官方支付子帧仍受支持。格式错误消息不写失败账本；任务恢复的地区不匹配或无历史任务显示具体拒绝原因。内部账本错误仍停止处理。消息日志不记录 JSON、授权码或解析器异常内容。
+
+正式版设备脚本与主 APK 分开压缩；测试代码需要的 Kotlin 运行方法不能因主应用没有直接调用而被裁掉。`app/proguard-device-tests.pro` 只保留现有脚本实际调用的运行入口，未关闭 R8 或保留整个 Kotlin 库。修改设备测试中的 Kotlin 调用后应重新运行压缩正式包的设备测试，并关注 APK 体积。

@@ -4,9 +4,14 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const {chromium} = require('playwright');
-const assets = path.resolve(__dirname, '../../app/src/main/assets');
+const assets = path.resolve(__dirname, '../legacy-web');
 const server = http.createServer((request, response) => {
-  const file = path.resolve(assets, '.' + new URL(request.url, 'http://localhost').pathname);
+  const pathname = new URL(request.url, 'http://localhost').pathname;
+  if (pathname === '/domain.js') {
+    response.setHeader('Content-Type','text/javascript');
+    response.end(fs.readFileSync(path.resolve(__dirname,'../../app/src/main/assets/domain.js'))); return;
+  }
+  const file = path.resolve(assets, '.' + pathname);
   if (!file.startsWith(assets + path.sep) || !fs.existsSync(file)) { response.writeHead(404); response.end(); return; }
   response.setHeader('Content-Type', {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp'}[path.extname(file)] || 'application/octet-stream');
   response.end(fs.readFileSync(file));
@@ -24,7 +29,7 @@ const server = http.createServer((request, response) => {
     const sample = {busy:false,country:'CN',updated:{pc:now,android:now,fab:now},message:'界面测试：示例数据',
       epicAccount:{connected:true,displayName:'示例账号'},fabAccount:{connected:true,displayName:'示例账号'},
       items:[{key:'pc-owned',category:'pc',title:'已拥有示例',status:'owned',localCover:'brand/game-night.webp'},
-        {key:'pc-free',category:'pc',title:'可领取示例',status:'unowned',localCover:'brand/game-night.webp'},
+        {key:'pc-free',category:'pc',title:'可领取示例',status:'unowned',originalPrice:40,localCover:'brand/game-night.webp'},
         {key:'pc-future',category:'pc',title:'预告示例',status:'unowned',availability:'upcoming',start:new Date(now+3600000).toISOString(),localCover:'brand/game-night.webp'},
         {key:'android-free',category:'android',title:'手机示例',status:'unowned',localCover:'brand/mobile-gift.webp'},
         {key:'fab-owned',category:'fab',title:'素材示例',status:'owned',localCover:'brand/fab-workshop.webp'}],
@@ -46,6 +51,18 @@ const server = http.createServer((request, response) => {
     assert.deepEqual(await page.evaluate(()=>[...selected]), ['pc-free']);
     await page.locator('#claim').click();
     assert.deepEqual(await page.evaluate(()=>commands.at(-1)), {action:'claim',category:'pc',keys:['pc-free']});
+    assert.equal(await page.locator('[data-key="pc-free"] del').innerText(), '40');
+    for (const change of ['owned','expired','removed']) {
+      await page.evaluate(value=>receiveState(value), sample);
+      await page.locator('#select-all').check();
+      await page.evaluate(({value,change}) => receiveState({...value,items:change==='removed'
+        ? value.items.filter(item=>item.key!=='pc-free')
+        : value.items.map(item=>item.key==='pc-free' ? {...item,status:change,
+            ...(change==='expired' ? {availability:'expired',end:new Date(Date.now()-1000).toISOString()} : {})} : item)}), {value:sample,change});
+      assert.equal(await page.evaluate(()=>selected.size),0);
+      assert.equal(await page.locator('#claim').isDisabled(),true);
+    }
+    await page.evaluate(value=>receiveState(value), sample);
     await page.locator('#resume-batch').click();
     assert.deepEqual(await page.evaluate(()=>commands.at(-1)), {action:'resumeBatch'});
     await page.locator('#show-history').click();
@@ -68,6 +85,15 @@ const server = http.createServer((request, response) => {
     await page.evaluate(value=>receiveState({...value,journalError:'记录损坏，自动领取已停止'}),sample);
     assert.equal(await page.locator('#claim-all').isDisabled(),true);
     assert.equal(await page.locator('#resume-batch').isDisabled(),true);
+    await page.evaluate(()=>receiveState({...state,busy:false,fabTier:'personal',journalError:''}));
+    await page.locator('#account').click();
+    await page.locator('#fab-tier').selectOption('professional');
+    assert.deepEqual(await page.evaluate(()=>commands.at(-1)),{action:'fabTier',tier:'professional'});
+    for (const width of [320,360,390,480]) {
+      await page.setViewportSize({width,height:780});
+      assert.ok(await page.locator('#account-dialog').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+    }
+    await page.locator('#close-account').click();
     assert.deepEqual(errors,[]);
     console.log('UI fixture checks passed: 4 widths, all-category action, selection, resume/history, pending orders, time boundaries, busy controls and account switch. No live orders.');
   } finally { await browser.close(); server.close(); }

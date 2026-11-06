@@ -1,0 +1,40 @@
+<resources>
+    <string name="native_app_name">runa周免口袋</string>
+    <string name="native_account">账号</string><string name="native_history">记录</string><string name="native_back">返回</string>
+    <string name="native_pc">电脑</string><string name="native_android">手机</string><string name="native_fab">Fab</string>
+    <string name="native_tab_count">%1$s · %2$s</string>
+    <string name="native_scene_pc">免费好游戏，收进口袋</string><string name="native_scene_android">手机好游戏，收进口袋</string><string name="native_scene_fab">创作新素材，收进口袋</string>
+    <string name="native_refresh">刷新活动</string><string name="native_sync">同步库存</string>
+    <string name="native_select_all">全选</string><string name="native_hide_owned">隐藏已拥有</string>
+    <string name="native_claim_all">一键领取全部</string><string name="native_claim_selected">领取所选 · %1$d</string>
+    <string name="native_login_claim">登录并领取 · %1$d</string><string name="native_working">正在处理…</string>
+    <string name="native_active">当前限免 · %1$d 项</string><string name="native_upcoming">即将推出 · %1$d 项</string>
+    <string name="native_owned">已拥有</string><string name="native_fab_owned">素材已拥有 · 档位未知</string><string name="native_unknown">拥有状态未确认</string>
+    <string name="native_fab_owned_tiers">素材已拥有 · %1$s</string>
+    <string name="native_unowned">未拥有</string><string name="native_partial">部分已拥有</string><string name="native_expired">活动已结束</string><string name="native_status_error">拥有状态同步失败</string>
+    <string name="native_cached">%1$s · 缓存</string><string name="native_checked">已核实 %1$s</string><string name="native_last_sync">上次同步 %1$s</string>
+    <string name="native_starts">%1$s 开始 · 暂不可领取</string><string name="native_free">限时免费</string><string name="native_ends">%1$s · %2$s 结束</string>
+    <string name="native_remaining_days">还剩 %1$d 天</string><string name="native_remaining_hours">还剩 %1$d 小时</string><string name="native_remaining_minutes">还剩 %1$d 分钟</string>
+    <string name="native_original_price">原价 %1$s</string><string name="native_deadline_unknown">活动时间以官网为准</string>
+    <string name="native_select_item">选择领取 %1$s</string><string name="native_detail_item">查看 %1$s 的详情</string>
+    <string name="native_cover">%1$s 官方封面</string><string name="native_screenshot">%1$s 官方截图 %2$d</string>
+    <string name="native_image_loading">正在加载官方图片…</string><string name="native_image_retry">图片加载失败，点击重试</string><string name="native_image_missing">暂无官方预览图</string>
+    <string name="native_empty">当前没有限免活动，刷新可重新获取。</string><string name="native_empty_unloaded">尚未获取活动，点击“刷新活动”重试。</string><string name="native_empty_hidden">内容已按“隐藏已拥有”筛选，取消勾选可查看。</string>
+    <string name="native_updated">活动更新于 %1$s</string><string name="native_not_updated">活动尚未更新</string>
+    <string name="native_owned_count">已拥有 %1$d 项 · 已选择 %2$d 项</string><string name="native_unconnected">未连接 %1$s · 连接后核实拥有状态</string><string name="native_connected">%1$s · %2$s</string><string name="native_account_connected">账号已连接</string>
+    <string name="native_resume_short">继续任务</string><string name="native_resume">继续最新任务</string><string name="native_recover_note">继续时先核实库存，已拥有不会重复领取；订单待核实项目保留保护。</string>
+    <string name="native_fab_resume_title">继续 Fab 领取</string>
+    <string name="native_fab_resume_message">有 Fab 素材曾准备打开结算，程序没有放行提交。如果你也没有手动提交这些订单，可以继续领取。程序会先查素材库，可能已提交的订单只核实。你也可以跳过重新结算，继续领取批次中的其他项目。</string>
+    <string name="native_fab_resume_confirm">未手动提交，继续</string>
+    <string name="native_fab_resume_others">继续其他项目</string>
+    <string name="native_run_verify_pending">有订单待核实</string>
+    <string name="native_publisher">发行方：%1$s</string><string name="native_description_missing">暂无官方简介，请查看商品官网。</string><string name="native_official">打开商品官网</string><string name="native_screenshots">官方截图</string>
+    <string name="native_accounts_title">账号与设置</string><string name="native_epic_account">Epic 账号 · 电脑与 Android</string><string name="native_fab_account">Fab 账号</string><string name="native_disconnected">尚未连接</string>
+    <string name="native_account_time">拥有状态同步于 %1$s</string><string name="native_connect">连接 %1$s</string><string name="native_reauthorize">重新授权 %1$s</string><string name="native_switch">切换账号</string><string name="native_logout">退出账号</string>
+    <string name="native_country">活动地区</string><string name="native_country_hint">两位地区代码，例如 CN、US、HK</string><string name="native_save_country">保存地区</string><string name="native_country_error">请输入两位英文字母地区代码</string>
+    <string name="native_fab_tier">Fab 免费许可档位</string><string name="native_tier_unset">未设置，每次领取前确认</string><string name="native_tier_personal">Personal · 个人</string><string name="native_tier_professional">Professional · 专业</string><string name="native_tier_note">素材已拥有不代表具有所选档位的授权；只提交官网明确免费的许可。</string>
+    <string name="native_history_title">领取记录</string><string name="native_history_empty">还没有领取记录。可以一键领取本期全部，或选择项目领取。</string><string name="native_history_latest">%1$s · 最新 · %2$s</string><string name="native_history_old">%1$s · %2$s</string><string name="native_history_note">只有最新记录可继续。旧记录保留供查看，可能提交过的订单只核实。</string>
+    <string name="native_run_done">已完成</string><string name="native_run_paused">已暂停</string><string name="native_run_active">处理中</string><string name="native_run_saved">已保存</string>
+    <string name="native_pending">等待处理</string><string name="native_claimed">已确认入库</string><string name="native_was_owned">原已拥有</string><string name="native_skipped">已跳过</string><string name="native_failed">失败，可重试</string><string name="native_uncertain">订单待核实</string>
+    <string name="native_entry_status">%1$s · %2$s</string><string name="native_verify_official">去官网核实</string><string name="native_history_tier">Fab 请求档位：%1$s</string><string name="native_tier_unknown">未知（旧记录或尚未领取）</string>
+</resources>

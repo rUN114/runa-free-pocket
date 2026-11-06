@@ -4,20 +4,26 @@ runa周免口袋的工程代码采用 GNU AGPL v3，全文见 [LICENSE](LICENSE)
 
 ## Android 运行依赖
 
-以下为 1.0.0 构建解析得到的直接及传递依赖；R8 会移除实际未使用的代码。这些依赖未修改源代码，其 Maven POM 均声明 Apache License 2.0。
+以下为原生版实际解析的运行组件（同系列传递模块合并列示）；R8移除未使用部分，未修改第三方源码。以下组件使用 Apache License 2.0。
 
-| 组件 | 版本 | 上游 |
+| 组件系列 | 解析版本 | 上游 |
 | --- | --- | --- |
-| androidx.webkit:webkit | 1.12.1 | [AndroidX WebKit](https://developer.android.com/jetpack/androidx/releases/webkit) |
-| androidx.annotation:annotation / annotation-jvm | 1.8.1 | [AndroidX Annotation](https://developer.android.com/jetpack/androidx/releases/annotation) |
-| androidx.annotation:annotation-experimental | 1.4.1 | AndroidX Annotation |
-| androidx.core:core | 1.1.0 | [AndroidX Core](https://developer.android.com/jetpack/androidx/releases/core) |
-| androidx.lifecycle:lifecycle-runtime / lifecycle-common | 2.0.0 | [AndroidX Lifecycle](https://developer.android.com/jetpack/androidx/releases/lifecycle) |
-| androidx.arch.core:core-common | 2.0.0 | [AndroidX Arch Core](https://developer.android.com/jetpack/androidx/releases/arch-core) |
-| androidx.versionedparcelable:versionedparcelable | 1.1.0 | [AndroidX VersionedParcelable](https://developer.android.com/jetpack/androidx/releases/versionedparcelable) |
-| androidx.collection:collection | 1.0.0 | [AndroidX Collection](https://developer.android.com/jetpack/androidx/releases/collection) |
-| org.jetbrains.kotlin:kotlin-stdlib | 2.2.10 | [JetBrains Kotlin](https://github.com/JetBrains/kotlin) |
-| org.jetbrains:annotations | 13.0 | [JetBrains Java Annotations](https://github.com/JetBrains/java-annotations) |
+| AndroidX WebKit | 1.12.1 | [WebKit](https://developer.android.com/jetpack/androidx/releases/webkit) |
+| Activity | 1.10.1 | [Activity](https://developer.android.com/jetpack/androidx/releases/activity) |
+| RecyclerView / CustomView / PoolingContainer | 1.4.0 / 1.0.0 / 1.0.0 | [RecyclerView](https://developer.android.com/jetpack/androidx/releases/recyclerview) |
+| Lifecycle / ViewModel / SavedState | 2.9.4 / 2.9.4 / 1.3.1 | [Lifecycle](https://developer.android.com/jetpack/androidx/releases/lifecycle) |
+| Core / Core KTX / Core ViewTree | 1.13.1 / 1.13.1 / 1.0.0 | [Core](https://developer.android.com/jetpack/androidx/releases/core) |
+| Annotation / Experimental | 1.9.1 / 1.4.1 | [Annotation](https://developer.android.com/jetpack/androidx/releases/annotation) |
+| Arch Core / Collection / Concurrent Futures | 2.2.0 / 1.4.2 / 1.1.0 | [AndroidX](https://android.googlesource.com/platform/frameworks/support/) |
+| ProfileInstaller / Startup / Tracing | 1.4.0 / 1.1.1 / 1.0.0 | AndroidX |
+| VersionedParcelable / Interpolator | 1.1.1 / 1.0.0 | AndroidX |
+| ViewBinding（运行组件） | 9.0.0 | [Android Data Binding](https://android.googlesource.com/platform/frameworks/data-binding/) |
+| Kotlin Stdlib | 2.2.10 | [Kotlin](https://github.com/JetBrains/kotlin) |
+| Kotlinx Coroutines Android / Core | 1.10.2 | [Coroutines许可证](https://github.com/Kotlin/kotlinx.coroutines/blob/1.10.2/LICENSE.txt) |
+| Kotlinx Serialization Core | 1.7.3 | [Serialization许可证](https://github.com/Kotlin/kotlinx.serialization/blob/v1.7.3/LICENSE.txt) |
+| JetBrains Annotations | 23.0.0 | [Java Annotations](https://github.com/JetBrains/java-annotations) |
+| Guava ListenableFuture | 1.0 | [Guava](https://github.com/google/guava) |
+| JSpecify | 1.0.0 | [JSpecify](https://github.com/jspecify/jspecify) |
 
 Apache 2.0 全文保留在 [WebKit 随包许可证](licenses/webkit-1.12.1-META-INF_androidx_webkit_webkit_LICENSE.txt)。已取得的依赖源码头部版权声明汇集在 [DEPENDENCY_COPYRIGHTS.txt](licenses/DEPENDENCY_COPYRIGHTS.txt)，包括 Android Open Source Project、JetBrains 及 Kotlin contributors 的原始声明。
 
@@ -25,10 +31,10 @@ Apache 2.0 全文保留在 [WebKit 随包许可证](licenses/webkit-1.12.1-META-
 
 ## 构建、测试和设计工具
 
-- 仓库附带 Gradle 9.3.0 Wrapper，Apache 2.0；原随包许可证见 [Gradle-Wrapper-LICENSE.txt](licenses/Gradle-Wrapper-LICENSE.txt)。Android Gradle Plugin 9.0.0 通过构建系统下载，不打入 APK。
+- 仓库附带 Gradle 9.8.2 Wrapper，Apache 2.0；原随包许可证见 [Gradle-Wrapper-LICENSE.txt](licenses/Gradle-Wrapper-LICENSE.txt)。Android Gradle Plugin 9.0.0 通过构建系统下载，不打入 APK。
 - JUnit 4.13.2 和 org.json:json:20240303 只用于本地测试，不打入 APK；分别见 [JUnit 许可证](https://github.com/junit-team/junit4/blob/r4.13.2/LICENSE-junit.txt) 和 [JSON-java 许可证](https://github.com/stleary/JSON-java/blob/20240303/LICENSE)。
 - 可选设计工具 Sharp 0.35.5 使用 Apache 2.0，具体工具及传递依赖见 [Sharp](https://github.com/lovell/sharp)。仓库不附带其安装文件，APK 不包含 Sharp；已提交转换后的 WebP，普通构建无需运行设计工具。
-- 可选浏览器测试使用 Playwright 1.62.1，Apache 2.0，见 [Playwright 许可证](https://github.com/microsoft/playwright/blob/v1.62.1/LICENSE)。仓库不捆绑其运行时，APK 不包含 Playwright。原生测试只使用平台 API 和已有 AndroidX WebKit，不新增生产依赖。
+- 可选浏览器测试使用 Playwright 1.62.1，Apache 2.0，见 [Playwright 许可证](https://github.com/microsoft/playwright/blob/v1.62.1/LICENSE)。仓库不捆绑其运行时，APK 不包含 Playwright。原生设备测试只存在于独立测试APK与debug诊断宿主，正式包不包含该宿主。协程测试库1.10.2仅用于JVM单元测试。
 - Android 系统提供 WebView；本工程没有内嵌 Chromium 浏览器或 Android 系统镜像。
 
 ## 实现参考与品牌素材

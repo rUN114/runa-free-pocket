@@ -3,8 +3,9 @@ function runPocketTask(task) {
   const D = PocketDomain;
   let finished = false, busy = false, clickedGet = false, ordered = false, lastNotice = '';
   let authChecked = false;
-  let fabOwned = null;
-  const send = (type, data = {}) => PocketStore.postMessage(JSON.stringify({nonce: task.nonce, type, ...data}));
+  let fabItemOwnership = null;
+  let fabCheckoutOfferId;
+  const send = (type, data = {}) => PocketStore.postMessage(JSON.stringify({nonce: task.nonce, type, path: location.pathname, ...data}));
   const finish = (type, data) => { if (!finished) { finished = true; send(type, data); } };
   const notice = text => { if (text !== lastNotice) { lastNotice = text; send('waiting', {message: text}); } };
   const visible = el => {
@@ -13,14 +14,22 @@ function runPocketTask(task) {
     return box.width > 0 && box.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
   };
   const label = el => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  function licenseText(control) {
+    if (control.tagName === 'SELECT') return control.selectedOptions[0]?.textContent || '';
+    return label(control);
+  }
   const buttons = scope => [...scope.querySelectorAll('button, a[role="button"]')].filter(visible);
   const requestedActions = new Set(), permittedActions = new Set();
+  let selectedFabTier = "";
   PocketStore.onmessage = event => {
     let reply;
     try { reply = JSON.parse(event.data); } catch { return; }
     if (reply.nonce !== task.nonce || reply.type !== 'actionPermit') return;
     if (reply.error) { finish('error', {message: reply.error}); return; }
-    if (requestedActions.has(reply.stage)) permittedActions.add(reply.stage);
+    if (requestedActions.has(reply.stage)) {
+      permittedActions.add(reply.stage);
+      if (reply.stage === "product" && reply.fabTierVerified === true) task.fabTierVerified = true;
+    }
   };
   function requestAction(stage, button, beforeClick) {
     if (permittedActions.delete(stage)) {
@@ -29,7 +38,7 @@ function runPocketTask(task) {
       if (stage === 'submit') send('ordered');
     } else if (!requestedActions.has(stage)) {
       requestedActions.add(stage);
-      send('actionReady', {stage});
+      send('actionReady', {stage, fabTier: selectedFabTier});
     }
   }
   async function json(url) {
@@ -60,20 +69,27 @@ function runPocketTask(task) {
     const me = await json('/i/users/me');
     if (!me || typeof me !== 'object') throw new Error('Fab 登录状态无法确认');
     if (task.accountId && me.uid !== task.accountId) throw new Error('Fab 账号已变化，请返回列表并重新核实账号');
-    const owned = new Set(), cursors = new Set();
+    const owned = new Set(), cursors = new Set(), tiersByListing = new Map();
     let url = '/i/library/search?count=100&source=acquired';
     for (let page = 0; page < 200; page++) {
       const data = await json(url);
       if (!Array.isArray(data.results)) throw new Error('Fab 素材库格式已变化，无法确认拥有状态');
       for (const entry of data.results) {
         if (entry.uid) owned.add(entry.uid);
-        if (entry.listing?.uid) owned.add(entry.listing.uid);
+        const listingId = entry.listing?.uid;
+        if (!listingId) continue;
+        owned.add(listingId);
+        const licenses = entry.entitlement?.licenses;
+        if (!Array.isArray(licenses)) continue;
+        const tiers = licenses.filter(license => license?.group?.slug === 'standard' &&
+          (license.slug === 'personal' || license.slug === 'professional')).map(license => license.slug);
+        if (tiers.length) tiersByListing.set(listingId, [...new Set([...(tiersByListing.get(listingId) || []), ...tiers])]);
       }
       const next = data.cursors?.next;
       if (!next) {
         if (data.results.length === 100 && !data.cursors) throw new Error('素材库缺少分页信息，暂不能判定未拥有');
         if (typeof me.uid !== 'string' || !me.uid) throw new Error('Fab 账号标识缺失，无法安全绑定领取记录');
-        return {owned, accountId: me.uid, displayName: me.displayName || me.username || me.sellerName || 'Fab 账号'};
+        return {owned, tiersByListing, accountId: me.uid, displayName: me.displayName || me.username || me.sellerName || 'Fab 账号'};
       }
       if (cursors.has(next)) throw new Error('素材库分页重复，暂不能确认拥有状态');
       cursors.add(next);
@@ -81,7 +97,10 @@ function runPocketTask(task) {
     }
     throw new Error('素材库分页数量超出本次核实范围');
   }
-  async function fabOwnership() { return (await fabLibrary()).owned.has(task.item.id); }
+  async function fabOwnership() {
+    const library = await fabLibrary();
+    return {owned: library.owned.has(task.item.id), fabOwnedTiers: library.tiersByListing.get(task.item.id) || []};
+  }
   async function auth() {
     if (task.category === 'fab' && location.hostname === 'www.fab.com') {
       if (authChecked) return;
@@ -117,7 +136,7 @@ function runPocketTask(task) {
     const h1 = scope.querySelector('h1');
     let parent = h1.parentElement;
     for (let depth = 0; parent && parent !== scope && depth < 5; depth++, parent = parent.parentElement) {
-      const candidates = buttons(parent).filter(b => /^(get|in library|owned|获取|领取|已在库中|已拥有)$/i.test(label(b)));
+      const candidates = buttons(parent).filter(b => D.labels.claim.test(label(b)) || D.labels.owned.test(label(b)));
       if (candidates.length === 1) return candidates[0];
     }
     // The current mobile layout separates the purchase card from the title header.
@@ -125,8 +144,8 @@ function runPocketTask(task) {
     const actions = new Set();
     for (const section of scope.querySelectorAll('section')) {
       const controls = buttons(section);
-      if (!controls.some(button => /^(wishlist|add to wishlist|加入愿望单|添加至愿望单|願望清單)$/i.test(label(button)))) continue;
-      const candidates = controls.filter(button => /^(get|in library|owned|获取|领取|已在库中|已拥有)$/i.test(label(button)));
+      if (!controls.some(button => D.labels.wishlistAnchor.test(label(button)))) continue;
+      const candidates = controls.filter(button => D.labels.claim.test(label(button)) || D.labels.owned.test(label(button)));
       if (candidates.length === 1) actions.add(candidates[0]);
     }
     return actions.size === 1 ? [...actions][0] : null;
@@ -138,37 +157,77 @@ function runPocketTask(task) {
     if (!scope) return;
     if (task.category === 'fab') {
       if (clickedGet) {
+        const currentLicense = scope.querySelector('#license-select');
+        if (currentLicense && D.fabTier(licenseText(currentLicense)) !== task.fabTier) {
+          finish('licenseInvalidated'); return;
+        }
         // Fab closes its checkout on success and replaces Buy now with this library link.
         // It only requests a fresh acquired-library check; the link does not prove ownership.
         const libraryLink = [...scope.querySelectorAll('a[href]')].find(link => visible(link) &&
-          /^view in my library$/i.test(label(link)) && new URL(link.href, location.href).pathname === '/library');
+          D.labels.viewInLibrary.test(label(link)) && new URL(link.href, location.href).pathname === '/library');
         if (libraryLink) finish('checkoutComplete');
         return;
       }
-      if (fabOwned === null) fabOwned = await fabOwnership();
-      if (fabOwned) { finish('result', {status: 'owned'}); return; }
+      if (fabItemOwnership === null) fabItemOwnership = await fabOwnership();
+      if (fabItemOwnership.owned) { finish('result', {status: 'owned', fabOwnedTiers: fabItemOwnership.fabOwnedTiers}); return; }
       if (task.mode === 'check') { finish('result', {status: 'unowned'}); return; }
       const current = D.parseFab(await json('/i/blades/free_content_blade'));
       if (!current.some(x => x.id === task.item.id)) { finish('result', {status: 'expired', message: '该素材已不在限时免费活动中'}); return; }
-      const buy = buttons(scope).find(b => /^(buy now|立即购买)$/i.test(label(b)));
+      const buy = buttons(scope).find(b => D.labels.fabBuy.test(label(b)));
       const freeLabel = /(?:-100%|100% off)/i.test(scope.innerText) && /\bfree\b|免费/i.test(scope.innerText);
       if (!buy || !freeLabel) { notice('未能确认当前素材免费；请查看官方页面后手动处理'); return; }
+      const license = scope.querySelector('#license-select');
+      if (!task.fabTier || !license || !visible(license)) {
+        notice('未找到明确的 Fab 许可选择控件，请检查设置和官方页面；未点击领取');
+        return;
+      }
+      const selectedLicense = licenseText(license);
+      const chosen = D.fabTier(selectedLicense);
+      if (chosen !== task.fabTier) {
+        if (license.getAttribute('aria-expanded') !== 'true') license.click();
+        const options = [...document.querySelectorAll('[role="option"]')].filter(option => visible(option) &&
+          option.getAttribute('aria-disabled') !== 'true' && D.fabTier(label(option)) === task.fabTier);
+        if (options.length === 1) options[0].click();
+        notice('正在选择 Fab ' + task.fabTier + ' 许可；选择确认后才继续');
+        return;
+      }
+      if (!/(?:-100%|100% off)/i.test(selectedLicense) || !/\bfree\b|免费/i.test(selectedLicense)) {
+        notice('所选许可档位未明确显示限时免费，未打开结算');
+        return;
+      }
+      selectedFabTier = chosen;
       requestAction('product', buy, () => { clickedGet = true; });
       notice('正在打开 Fab 零元结算；首次使用如出现许可协议，请阅读并确认');
     } else {
       const cta = epicCta(scope);
       if (!cta) { notice('正在等待商品主按钮；若网页要求登录或验证，请先完成'); return; }
       const text = label(cta);
-      if (/^(in library|owned|已在库中|已拥有)$/i.test(text)) { finish('result', {status: 'owned'}); return; }
-      if (!/^(get|获取|领取)$/i.test(text)) {
-        if (/buy|购买|unavailable|不可用|即将|coming/i.test(text)) finish('result', {status: 'expired', message: '该商品当前无法免费领取'});
+      if (D.labels.owned.test(text)) { finish('result', {status: 'owned'}); return; }
+      if (!D.labels.claim.test(text)) {
+        if (D.labels.unavailable.test(text)) finish('result', {status: 'expired', message: '该商品当前无法免费领取'});
         return;
       }
       if (task.mode === 'check') { finish('result', {status: 'unowned'}); return; }
-      if (!clickedGet && !cta.disabled) requestAction('product', cta, () => { clickedGet = true; });
+      if (!clickedGet && !cta.disabled) requestAction('product', cta, () => {
+        clickedGet = true;
+        notice('正在打开官方结算。若出现验证码请在网页完成；当前尚未确认领取成功。');
+      });
     }
   }
-  function checkout() {
+  async function fabListingOfferId() {
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(task.item.id)) return null;
+    const listing = await json('/i/listings/' + task.item.id);
+    if (listing?.uid !== task.item.id || !Array.isArray(listing.licenses)) return null;
+    const tiers = listing.licenses.filter(license => license?.slug === task.fabTier);
+    if (tiers.length !== 1) return null;
+    const offerId = tiers[0].offerId;
+    if (typeof offerId !== 'string' || !/^[0-9a-f]{32}$/i.test(offerId)) return null;
+    const normalized = offerId.toLowerCase();
+    const matching = listing.licenses.filter(license =>
+      typeof license?.offerId === 'string' && license.offerId.toLowerCase() === normalized);
+    return matching.length === 1 ? normalized : null;
+  }
+  async function checkout() {
     if (finished || task.mode !== 'claim') return;
     const inPaymentFrame = location.hostname === 'www.epicgames.com' && location.pathname.startsWith('/payment/');
     const inStoreCheckout = location.hostname === 'store.epicgames.com' && location.pathname === '/checkout';
@@ -176,20 +235,50 @@ function runPocketTask(task) {
     const scope = (inPaymentFrame || inStoreCheckout || inFabCheckout) ? document.body : [...document.querySelectorAll('[role="dialog"], dialog')].find(visible);
     if (!scope) return;
     const heading = [...scope.querySelectorAll('h1,h2,h3')].find(el => visible(el) &&
-      /^(thank you[!.]?|thanks for (your purchase|buying)[!.]?|order complete[!.]?|感谢购买[！!]?|订单完成[！!]?)$/i.test(label(el)));
+      D.labels.receiptDone.test(label(el)));
     const receiptText = scope.innerText.replace(/\s+/g, ' ');
-    const currentReceipt = /\bit['’]s all yours\b/i.test(receiptText) && /thanks for your order[.!]?/i.test(receiptText) &&
-      buttons(scope).some(button => /^continue browsing$/i.test(label(button)));
+    const currentReceipt = D.labels.receiptAllYours.test(receiptText) && D.labels.receiptThanks.test(receiptText) &&
+      buttons(scope).some(button => D.labels.continueBrowsing.test(label(button)));
     if (heading || currentReceipt) { finish('checkoutComplete'); return; }
     if (ordered) return;
-    const submit = buttons(scope).find(b => /^(place order|add to library|下单|下订单|加入库|添加到库)$/i.test(label(b)));
+    const submit = buttons(scope).find(b => D.labels.submitOrder.test(label(b)));
+    const addToLibrary = submit && /^(add to library|加入库|添加到库)$/i.test(label(submit));
+    if (task.category === 'fab') {
+      const orderLicense = scope.querySelector('#license-select');
+      let orderTier = orderLicense ? D.fabTier(licenseText(orderLicense)) : D.fabCheckoutTier(scope.innerText);
+      // Fab's compact free checkout omits the tier label. Match its single offer to the official listing.
+      if (!orderLicense && !orderTier && inFabCheckout && task.accountId && task.fabTierVerified && addToLibrary &&
+          !/\b(?:licen[sc]e|personal|professional)\b|许可|授权|个人|专业/i.test(scope.innerText) &&
+          D.zeroFreeCheckout(scope.innerText) === true) {
+        const url = new URL(location.href);
+        const offers = url.searchParams.getAll('offers');
+        const offer = offers.length === 1 && /^1-[0-9a-f]{32}-([0-9a-f]{32})--$/i.exec(offers[0]);
+        if (url.origin === 'https://www.fab.com' && url.searchParams.getAll('merchantGroup').join() === 'UE_MKT' && offer) {
+          if (fabCheckoutOfferId === undefined) {
+            fabCheckoutOfferId = await fabListingOfferId();
+            return; // Re-read the page on the next tick before requesting or using a permit.
+          }
+          if (offer[1].toLowerCase() === fabCheckoutOfferId) orderTier = task.fabTier;
+        }
+      }
+      if (!task.fabTier || !task.fabTierVerified || orderTier !== task.fabTier) {
+        notice('商品页许可尚未确认，或结算许可缺失、不明确、与所选档位不一致；已暂停自动提交');
+        return;
+      }
+    }
     if (!submit || submit.disabled) return;
-    let free = D.zeroTotal(scope.innerText);
-    if (free === null && (inStoreCheckout || inFabCheckout) && /^(add to library|加入库|添加到库)$/i.test(label(submit)))
+    const totalState = D.totalState(scope.innerText, task.item.title);
+    let free = null;
+    if (totalState === 'zero') free = true;
+    else if (totalState === 'nonzero') free = false;
+    if (free === null && (inStoreCheckout || inFabCheckout) && addToLibrary)
       free = D.zeroFreeCheckout(scope.innerText);
     if (free !== true) {
       if (free === false) finish('blocked', {message: '订单合计不为零，已停止自动下单'});
-      else notice('未能读取明确的零元合计。请查看订单，必要时手动领取，再点“核实结果”');
+      else {
+        const reason = {missing:'结算页缺少可确认的合计', ambiguous:'结算页出现多条合计，无法确认订单金额', unreadable:'结算合计金额无法识别'}[totalState];
+        notice(reason + '；已暂停。请查看订单，必要时手动领取，再点“核实结果”');
+      }
       return;
     }
     // Consent, age, and marketing choices belong to the user; never tick them automatically.
@@ -212,7 +301,8 @@ function runPocketTask(task) {
         await auth();
       } else if (isTop && task.mode === 'syncFab' && fab) {
         const library = await fabLibrary();
-        finish('ownership', {owned: [...library.owned], checkedAt: Date.now(), accountId: library.accountId, displayName: library.displayName});
+        finish('ownership', {owned: [...library.owned], fabTiersByListing: Object.fromEntries(library.tiersByListing),
+          checkedAt: Date.now(), accountId: library.accountId, displayName: library.displayName});
       } else if (isTop && task.mode === 'discover' && ((task.category === 'fab' && fab) || (task.category !== 'fab' && epic))) {
         await discover();
       } else if (task.mode === 'check' || task.mode === 'claim') {
@@ -221,7 +311,7 @@ function runPocketTask(task) {
           if (me.uid !== task.accountId) throw new Error('Fab 账号已变化，已停止当前项目的自动操作');
         }
         if (isTop && ((task.category === 'fab' && fab) || (task.category !== 'fab' && epic))) await inspectProduct();
-        checkout();
+        await checkout();
       }
     } catch (error) {
       finish('error', {message: error.message});

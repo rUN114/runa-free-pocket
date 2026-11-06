@@ -7,13 +7,14 @@ if (signingPropertiesPath != null) {
 android {
     namespace 'cn.run.freepocket'
     compileSdk 35
+    buildFeatures { viewBinding true }
     defaultConfig {
         applicationId 'cn.run.freepocket'
         minSdk 26
         targetSdk 35
-        versionCode 9
-        versionName '1.0.0'
-        testInstrumentationRunner 'cn.run.freepocket.tests.ReleaseVerification'
+        versionCode 16
+        versionName '1.1.3'
+        testInstrumentationRunner 'cn.run.freepocket.tests.NativeVerification'
     }
     testBuildType providers.gradleProperty('runaTestBuildType').getOrElse('release')
     signingConfigs {
@@ -50,7 +51,14 @@ android {
 dependencies {
     // Origin-restricted messaging and scripts inside Epic's cross-origin checkout frame.
     implementation 'androidx.webkit:webkit:1.12.1'
+    // Native recycled lists and lifecycle-aware state; compatible with the existing API 35 toolchain.
+    implementation 'androidx.activity:activity:1.10.1'
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.4'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.9.4'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
     // The Android SDK's JSON classes are stubs in local JVM tests; execute the real parser instead.
     testImplementation 'org.json:json:20240303'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2'
 }

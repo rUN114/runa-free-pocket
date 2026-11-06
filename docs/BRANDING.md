@@ -14,6 +14,10 @@
 
 设计原图不属于 Android 的运行资源目录，不打入 APK。代码许可证不代表对第三方商标或商城图片的授权；游戏和素材的真实封面继续从官方读取。
 
+## 原生运行资源
+
+1.1.0原生版将既有四张WebP原样移动/复制为app/src/main/res/drawable-nodpi/native_logo.webp、native_game_night.webp、native_mobile_gift.webp、native_fab_workshop.webp，未重新生成角色。历史网页资源保存在tests/legacy-web/brand，不打入APK。可选编码工具现在输出到原生drawable，不再生成生产assets/brand目录。
+
 ## 运行资源与压缩
 
 - 三张插画：640px 宽，最近邻缩放保持像素轮廓，WebP quality 88、alphaQuality 100。
@@ -39,4 +43,4 @@ node tools/optimize-brand-assets.cjs
 - 夜空背景 #071329，主视觉深蓝 #092657，面板 #11213c。
 - 奶油白文字 #fff3dd，月光金操作 #ffd279，退出操作辅以珊瑚色 #ffc6bd。
 - 系统字体用于正文；像素感集中在 Logo 和插画，未引入字体服务。
-- 高度不超过 740px 时收紧头部，保留业务按钮与状态，避免商品标题被底栏遮挡。
+- 原生目录按实际dp宽度分为1/2/3列（600/1000dp断点），头部随列表滚动，底部领取操作固定；检查320dp与大字号。旧网页740px高度规则只保留在历史界面。

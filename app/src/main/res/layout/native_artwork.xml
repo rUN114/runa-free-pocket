@@ -1,0 +1,4 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="220dp" android:background="@color/native_surface_variant">
+    <ImageView android:id="@+id/image" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" />
+    <Button android:id="@+id/image_status" style="@style/native_button" android:layout_width="match_parent" android:layout_height="match_parent" android:backgroundTint="@color/native_surface_variant" android:text="@string/native_image_loading" />
+</FrameLayout>

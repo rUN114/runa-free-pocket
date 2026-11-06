@@ -1,3 +1,5 @@
+param([switch]$Browser)
+
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location -LiteralPath $projectRoot
@@ -5,10 +7,18 @@ try {
     $scripts = @(Get-ChildItem -LiteralPath tests -Filter '*.test.cjs' | ForEach-Object FullName)
     & node --test @scripts
     if ($LASTEXITCODE -ne 0) { throw 'JavaScript tests failed' }
-    $classes = Join-Path ([IO.Path]::GetTempPath()) ('freepocket-tests-' + [guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $classes | Out-Null
-    & javac --release 17 -encoding UTF-8 -d $classes app/src/main/java/cn/run/freepocket/EpicEntitlements.java tests/java/EpicEntitlementsTest.java
-    if ($LASTEXITCODE -ne 0) { throw 'Java ownership test compilation failed' }
-    & java -cp $classes cn.run.freepocket.EpicEntitlementsTest
-    if ($LASTEXITCODE -ne 0) { throw 'Java ownership tests failed' }
+    # Python 回归：上游探针异常样本与设备脚本的摘要测试（无网络、无设备）。
+    foreach ($suite in @(@('upstream', 'test_probe'), @('device', 'test_release_smoke'))) {
+        Push-Location -LiteralPath (Join-Path $PSScriptRoot $suite[0])
+        try {
+            & python -m unittest $suite[1]
+            if ($LASTEXITCODE -ne 0) { throw "Python tests failed: $($suite[1])" }
+        } finally { Pop-Location }
+    }
+    if ($Browser) {
+        & node tests/browser/ui.cjs
+        if ($LASTEXITCODE -ne 0) { throw 'Browser UI tests failed' }
+    }
+    # 原生拥有凭证分页检查已迁入 Gradle 单元测试：app/src/test/.../EpicEntitlementsTest.kt，
+    # 随 `./gradlew.bat testReleaseUnitTest` 一起运行，不再单独编译 Java 测试类。
 } finally { Pop-Location }

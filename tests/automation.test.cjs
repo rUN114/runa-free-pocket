@@ -10,12 +10,14 @@ function element(text, overrides = {}) {
 }
 async function run({mode='check',category='pc',ctaText='Get',paymentText=null,library=[],fetchError=false,
   libraryPages=null,failLibraryPage=-1,urlOverride=null,authBody='',itemOverrides={},separatePurchaseCard=false,ambiguousCards=false,
-  storeCheckout=false,submitText='Place Order',fabProduct=false,permitActions=true,accountId='',meUid='user-a'} = {}) {
+  storeCheckout=false,submitText='Place Order',fabProduct=false,permitActions=true,accountId='',meUid='user-a',fabTier='personal',selectedTier='Personal',checkoutTier='Personal',fabTierVerified=true,nativeSelect=false,selectedPrice='Free -100%',fabListing=null,topLevel=true,requiredConsent=false} = {}) {
   const messages = [], ticks = [], requests = [];
   let libraryPage = 0;
   const cta = element(ctaText);
   const h1 = element('Test Game');
-  const main = element('', {querySelector: selector => selector==='h1' ? h1 : cta});
+  const licenseControl=element(nativeSelect ? 'Personal Free -100% Professional $99' : selectedTier + ' '+selectedPrice,
+    {getAttribute:()=>null,tagName:nativeSelect?'SELECT':'BUTTON',selectedOptions:[element(selectedTier+' '+selectedPrice)]});
+  const main = element('', {querySelector: selector => selector==='h1' ? h1 : selector==='#license-select'?licenseControl:cta});
   h1.parentElement = main;
   if (separatePurchaseCard) {
     h1.parentElement = element('', {parentElement:main});
@@ -31,13 +33,19 @@ async function run({mode='check',category='pc',ctaText='Get',paymentText=null,li
     cta.innerText = 'Buy now';
     const link = element('View in My Library', {href:'https://www.fab.com/library'});
     main.querySelectorAll = selector => {
-      if (selector.startsWith('button')) return [cta];
+      if (selector.startsWith('button') || selector.startsWith('select,')) return [cta,element(selectedTier)];
       if (selector==='a[href]' && libraryVisible) return [link];
       return [];
     };
   }
   const submit = element(submitText);
-  const payment = paymentText === null ? null : element(paymentText, {querySelectorAll:selector=>selector.startsWith('button') ? [submit] : []});
+  const payment = paymentText === null ? null : element((category==='fab'?checkoutTier+'\n':'')+paymentText, {
+    querySelector:selector=>selector==='#license-select'&&checkoutTier?element(checkoutTier):null,
+    querySelectorAll:selector=>{
+      if(selector.startsWith('button')) return [submit];
+      if(selector==='input[type="checkbox"][required]' && requiredConsent) return [{checked:false}];
+      return [];
+    }});
   const doc = {body:storeCheckout&&payment?payment:element(authBody),querySelector:selector=>selector==='main'?main:null,
     querySelectorAll:selector=>selector.includes('dialog')&&payment?[payment]:[]};
   const url = category==='fab' ? 'https://www.fab.com/listings/12345678-abcd-abcd-abcd-123456789012?lang=en' : 'https://store.epicgames.com/en-US/p/test-game';
@@ -46,24 +54,25 @@ async function run({mode='check',category='pc',ctaText='Get',paymentText=null,li
     clearTimeout:()=>{},
     PocketStore:{postMessage:data=>{
       const message=JSON.parse(data); messages.push(message);
-      if (permitActions && message.type==='actionReady') context.PocketStore.onmessage({data:JSON.stringify({type:'actionPermit',nonce:'test',stage:message.stage})});
+      if (permitActions && message.type==='actionReady') context.PocketStore.onmessage({data:JSON.stringify({type:'actionPermit',nonce:'test',stage:message.stage,fabTierVerified:true})});
     }},
     fetch:async request=>{
       requests.push(request);
       if (request.includes('/blades/')) return {ok:true,json:async()=>({isLimitedFreeContent:true,blockContentType:'listings',
         tiles:[{listing:{uid:'12345678-abcd-abcd-abcd-123456789012',title:'Test asset'}}]})};
       if (request.includes('/users/me')) return {ok:!fetchError,status:fetchError?401:200,json:async()=>({uid:meUid,displayName:'Test Fab'})};
+      if (fabListing && request === '/i/listings/12345678-abcd-abcd-abcd-123456789012') return {ok:true,json:async()=>fabListing};
       const index=libraryPage++;
       return {ok:!fetchError&&index!==failLibraryPage,status:fetchError?401:index===failLibraryPage?503:200,
         json:async()=>libraryPages?libraryPages[index]:{results:library,cursors:{next:null}}};
     }};
-  context.window = context; context.top = context;
+  context.window = context; context.top = topLevel ? context : {};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(base,'domain.js'),'utf8')+'\n'+fs.readFileSync(path.join(base,'automation.js'),'utf8'), context);
-  context.runPocketTask({nonce:'test',mode,category,country:'CN',accountId,item:{id:'12345678-abcd-abcd-abcd-123456789012',url,...itemOverrides}});
+  context.runPocketTask({nonce:'test',mode,category,country:'CN',accountId,fabTier,fabTierVerified,item:{id:'12345678-abcd-abcd-abcd-123456789012',url,...itemOverrides}});
   await ticks[0]();
   if (permitActions) { await ticks[0](); await ticks[0](); }
-  return {messages,cta,submit,payment,tick:ticks[0],requests,showFabLibrary:()=>{libraryVisible=true;},
+  return {messages,cta,submit,payment,licenseControl,tick:ticks[0],requests,showFabLibrary:()=>{libraryVisible=true;},
     permit:stage=>context.PocketStore.onmessage({data:JSON.stringify({type:'actionPermit',nonce:'test',stage})})};
 }
 
@@ -197,6 +206,21 @@ test('Fab: acquired listing ID confirms ownership', async () => {
 test('Fab: an empty authenticated library means unowned', async () => {
   const result = await run({category:'fab'}); assert.equal(result.messages[0].status,'unowned');
 });
+
+test('Fab publishes acquired license tiers for the exact listing, including multiple tiers', async () => {
+  const id='12345678-abcd-abcd-abcd-123456789012';
+  const grant=slug=>({slug,group:{slug:'standard'}});
+  const libraryPages=[
+    {results:[{uid:'acquisition-a',listing:{uid:id},entitlement:{licenses:[grant('professional'),grant('future-tier')]}}],cursors:{next:'next'}},
+    {results:[{uid:'acquisition-b',listing:{uid:id},entitlement:{licenses:[grant('personal'),grant('professional')]}},
+      {uid:'other-acquisition',listing:{uid:'other-listing'},licenses:[grant('professional')]}],cursors:{next:null}}
+  ];
+  const synced=await run({category:'fab',mode:'syncFab',libraryPages});
+  assert.deepEqual(synced.messages[0].fabTiersByListing,{[id]:['professional','personal']});
+  const checked=await run({category:'fab',libraryPages});
+  assert.equal(checked.messages[0].status,'owned');
+  assert.deepEqual(checked.messages[0].fabOwnedTiers,['professional','personal']);
+});
 test('Fab: HTTP 401 is a failure, never an empty library or an unowned result', async () => {
   const result = await run({category:'fab',fetchError:true});
   assert.equal(result.messages[0].type,'error'); assert.match(result.messages[0].message,/401/);
@@ -247,4 +271,122 @@ test('upcoming or expired tasks cannot click Get or place even a zero order', as
     assert.equal(result.cta.clicks,undefined);
     assert.equal(result.submit.clicks,undefined);
   }
+});
+
+test('Fab refuses a missing or mismatched product license before opening checkout', async()=>{
+ for(const choice of ['', 'professional']) {
+ const r=await run({mode:'claim',category:'fab',fabProduct:true,fabTier:choice});
+ assert.equal(r.cta.clicks,undefined);
+ assert.ok(r.messages.some(m=>m.type==='waiting'));
+ }
+});
+test('Fab rejects unknown and mismatched checkout tiers even with a zero total',async()=>{
+ for(const tier of ['Professional','Personal Professional']) {
+ const r=await run({mode:'claim',category:'fab',storeCheckout:true,checkoutTier:tier,
+ urlOverride:'https://www.fab.com/payment/web/purchase',paymentText:'Total $0.00'});
+ assert.equal(r.submit.clicks,undefined);
+ }
+});
+
+test('Fab checkout without this task native product-license confirmation cannot submit',async()=>{
+ const r=await run({mode:'claim',category:'fab',storeCheckout:true,fabTierVerified:false,checkoutTier:'',
+ urlOverride:'https://www.fab.com/payment/web/purchase',paymentText:'Total $0.00'});
+ assert.equal(r.submit.clicks,undefined);
+ assert.ok(!r.messages.some(m=>m.type==='actionReady'&&m.stage==='submit'));
+});
+
+test('Fab rechecks a changed product license after native permission and before click',async()=>{
+ const r=await run({mode:'claim',category:'fab',fabProduct:true,permitActions:false});
+ r.permit('product'); r.licenseControl.innerText='Professional Free -100%';
+ await r.tick(); assert.equal(r.cta.clicks,undefined);
+});
+test('Fab clears approval if the product license changes after opening checkout',async()=>{
+ const r=await run({mode:'claim',category:'fab',fabProduct:true});
+ assert.equal(r.cta.clicks,1); r.licenseControl.innerText='Professional Free -100%';
+ await r.tick(); assert.ok(r.messages.some(m=>m.type==='licenseInvalidated'));
+});
+
+test('Fab native select reads only the selected option for the tier and free price',async()=>{
+ const free=await run({mode:'claim',category:'fab',fabProduct:true,nativeSelect:true});
+ assert.equal(free.cta.clicks,1);
+ await free.tick(); assert.ok(!free.messages.some(m=>m.type==='licenseInvalidated'));
+ const paid=await run({mode:'claim',category:'fab',fabProduct:true,nativeSelect:true,
+ fabTier:'professional',selectedTier:'Professional',selectedPrice:'$99'});
+ assert.equal(paid.cta.clicks,undefined);
+});
+
+
+test('Fab missing checkout license cannot rely on product approval alone', async () => {
+  const r = await run({mode:'claim',category:'fab',storeCheckout:true,checkoutTier:'',
+    urlOverride:'https://www.fab.com/payment/web/purchase',paymentText:'Total $0.00'});
+  assert.equal(r.submit.clicks, undefined);
+  assert.ok(r.messages.some(m => m.type==='waiting' && /许可/.test(m.message)));
+});
+test('Fab checkout without a selector accepts only an explicit matching summary', async () => {
+  for (const summary of ['License: Personal', 'License: Professional', 'Personal\nProfessional', 'Personal', 'License: Personal\nLicense: Personal']) {
+    const r = await run({mode:'claim',category:'fab',storeCheckout:true,checkoutTier:'',
+      urlOverride:'https://www.fab.com/payment/web/purchase',paymentText:summary+'\nTotal $0.00'});
+    assert.equal(r.submit.clicks, summary==='License: Personal' ? 1 : undefined);
+  }
+});
+
+test('Fab free checkout binds the single official offer to the requested listing and license', async () => {
+  const id='12345678-abcd-abcd-abcd-123456789012';
+  const professional='a'.repeat(32), personal='b'.repeat(32), namespace='c'.repeat(32);
+  const fabListing={uid:id,licenses:[{slug:'professional',offerId:professional},{slug:'personal',offerId:personal}]};
+  const checkout='https://www.fab.com/payment/web/purchase';
+  const offers='1-'+namespace+'-'+professional+'--';
+  const url=checkout+'?merchantGroup=UE_MKT&offers='+offers;
+  const freeCard='HK$0.00\nThis is free. Add it to your library to get started.';
+  const options={mode:'claim',category:'fab',accountId:'user-a',fabTier:'professional',storeCheckout:true,
+    checkoutTier:'',submitText:'Add to library',paymentText:freeCard,urlOverride:url,fabListing,topLevel:false};
+  const accepted=await run(options);
+  assert.equal(accepted.submit.clicks,1);
+  await accepted.tick();
+  assert.equal(accepted.submit.clicks,1);
+  for (const override of [
+    {urlOverride:url.replace(professional,personal)},
+    {urlOverride:url+'&offers='+offers},
+    {urlOverride:url+','+offers},
+    {urlOverride:url.replace('offers=1-','offers=2-')},
+    {urlOverride:url.replace('UE_MKT','other')},
+    {urlOverride:url.replace('www.fab.com','www.epicgames.com').replace('/payment/web/purchase','/payment/order')},
+    {fabListing:{...fabListing,uid:'other-listing'}},
+    {fabListing:{...fabListing,licenses:[...fabListing.licenses,{slug:'personal',offerId:professional}]}},
+    {accountId:''},
+    {requiredConsent:true},
+    {fabTierVerified:false},
+    {checkoutTier:'Personal'},
+    {paymentText:'License: Personal\n'+freeCard},
+    {paymentText:'License: Professional\nLicense: Personal\n'+freeCard},
+    {paymentText:freeCard.replace('HK$0.00','HK$1.00')},
+    {paymentText:freeCard+'\nTotal HK$1.00'}
+  ]) {
+    const rejected=await run({...options,...override});
+    assert.equal(rejected.submit.clicks,undefined,JSON.stringify(override));
+  }
+  const changed=await run({...options,permitActions:false});
+  await changed.tick();
+  assert.ok(changed.messages.some(m=>m.type==='actionReady'&&m.stage==='submit'));
+  changed.payment.innerText=freeCard.replace('HK$0.00','HK$1.00');
+  changed.permit('submit');
+  await changed.tick();
+  assert.equal(changed.submit.clicks,undefined);
+});
+test('checkout explains missing, ambiguous and unreadable totals without submitting', async () => {
+  for (const [text,reason] of [['Game','缺少'], ['Total $0.00\nTotal $1.00','多条'], ['Total Unavailable','金额']]) {
+    const r = await run({mode:'claim',paymentText:text});
+    assert.equal(r.submit.clicks, undefined);
+    assert.ok(r.messages.some(m => m.type==='waiting' && m.message.includes(reason)));
+  }
+});
+
+test('checkout requests identify the page path and product progress does not imply an order', async () => {
+  const checkout = await run({mode:'claim',storeCheckout:true,
+    urlOverride:'https://store.epicgames.com/checkout',paymentText:'Total $0.00'});
+  assert.equal(checkout.messages.find(m=>m.type==='actionReady'&&m.stage==='submit').path,'/checkout');
+  const product = await run({mode:'claim'});
+  assert.equal(product.cta.clicks,1);
+  assert.ok(product.messages.some(m=>m.type==='waiting'&&/正在打开官方结算/.test(m.message)));
+  assert.ok(!product.messages.some(m=>m.type==='ordered'));
 });

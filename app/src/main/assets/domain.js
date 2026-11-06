@@ -1,3 +1,7 @@
+// Native migration note: parsePc/applyOwnership are retained as legacy regression
+// references; production PC parsing and ownership decisions live in CatalogRules.kt.
+// zeroTotal is a compatibility wrapper for legacy tests. Official checkout calls
+// totalState and zeroFreeCheckout below; do not change only zeroTotal to alter checkout.
 (function (root) {
   'use strict';
   function array(value, label) {
@@ -43,6 +47,7 @@
   function plainText(value) {
     return typeof value === 'string' ? value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000) : '';
   }
+  // Legacy Web-UI regression oracle. Native production PC discovery uses CatalogRules.parsePc.
   function parsePc(data, now = Date.now()) {
     const items = array(data?.data?.Catalog?.searchStore?.elements, 'Epic 活动');
     return items.flatMap(item => {
@@ -109,6 +114,7 @@
     return {cover: images[0] || '', screenshots: [...new Set(images)],
       description: plainText(listing.description), publisher: listing.user?.sellerName || '', originalPrice: ''};
   }
+  // Legacy Web-UI oracle; current native inventory decisions use CatalogRules.applyOwnership.
   function applyOwnership(items, snapshot, fresh = true, category = null) {
     if (!snapshot?.accountId || !Number.isFinite(snapshot.checkedAt)) throw new Error('账号库存身份或同步时间缺失');
     const owned = new Set(array(snapshot.owned, '账号库存').map(entry => entry.namespace + ':' + entry.id));
@@ -139,21 +145,42 @@
     if (!amount || (requireCurrency && !amount[1] && !amount[3])) return null;
     return Number(amount[2].replace(',', '.'));
   }
-  function zeroTotal(text) {
+  function totalState(text, productTitle = '') {
     const lines = String(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const totals = [];
     for (let i = 0; i < lines.length; i++) {
       const label = lines[i].match(/^(?:(?:order|grand)\s+)?(?:total\b|总计|合计|總計)\s*[:：]?\s*(.*)$/i);
-      if (label) totals.push(label[1] || lines[i + 1] || '');
+      if (!label) continue;
+      // Never exclude a bare Total label or a monetary amount, even if it matches the title.
+      if (productTitle && lines[i] === productTitle.trim() && label[1] && moneyValue(label[1]) === null) continue;
+      totals.push(label[1] || lines[i + 1] || '');
     }
-    if (totals.length !== 1) return null;
+    if (!totals.length) return 'missing';
+    if (totals.length !== 1) return 'ambiguous';
     const amount = moneyValue(totals[0]);
-    return amount === null ? null : amount === 0;
+    if (amount === null) return 'unreadable';
+    return amount === 0 ? 'zero' : 'nonzero';
+  }
+  // Legacy tri-state wrapper retained for regression tests; checkout adapter calls totalState.
+  function zeroTotal(text, productTitle = '') {
+    const state = totalState(text, productTitle);
+    if (state === 'zero') return true;
+    if (state === 'nonzero') return false;
+    return null;
+  }
+  function fabCheckoutTier(text) {
+    const tiers = [];
+    for (const line of String(text).split(/\r?\n/)) {
+      const summary = line.trim().match(/^(?:(?:license(?: type)?|许可(?:类型)?|授权(?:类型)?)\s*[:：]\s*(personal|professional)|(personal|professional)\s+license)$/i);
+      if (summary) tiers.push((summary[1] || summary[2]).toLowerCase());
+    }
+    return tiers.length === 1 ? tiers[0] : '';
   }
   function zeroFreeCheckout(text) {
     const lines = String(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    if (!/This is free\. Add it to your library to get started\./i.test(lines.join(' '))) return null;
-    // An existing total must be handled by zeroTotal, never bypassed by the free-card layout.
+    const freeCard = /This is free\. Add it to your library to get started\.|这是免费的[。.]\s*将其添加到您的游戏库即可开始[。.]|此内容免费[。.]\s*添加到游戏库即可开始[。.]/i;
+    if (!freeCard.test(lines.join(' '))) return null;
+    // An existing total must be handled by totalState, never bypassed by the free-card layout.
     if (lines.some(line => /^(?:(?:order|grand)\s+)?(?:total\b|总计|合计|總計)/i.test(line))) return null;
     const prices = lines.filter(line => /\b(?:USD|EUR|GBP|CNY|HKD|JPY|RMB)\b|US\$|HK\$|CN¥|[$€£¥￥]/i.test(line));
     if (prices.length !== 1) return null;
@@ -171,7 +198,29 @@
       !['upcoming', 'expired'].includes(availabilityAt(item)) && (!item.start || promotionTime(item.start) <= Date.now()) &&
       (!item.end || Date.parse(item.end) > Date.now()));
   }
-  const api = {parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, availabilityAt, zeroTotal, zeroFreeCheckout, queue};
+  function fabTier(text) {
+    const personal = /\bpersonal\b|个人(?:版|许可)/i.test(text);
+    const professional = /\bprofessional\b|专业(?:版|许可)/i.test(text);
+    if (personal === professional) return "";
+    return personal ? "personal" : "professional";
+  }
+  // Official-page button vocabulary, grouped by claim intent so each stage has one place to extend.
+  // claim/owned/wishlistAnchor/fabBuy/submitOrder/receiptDone/continueBrowsing/viewInLibrary are
+  // exact-match controls; unavailable is a substring guard; receiptAllYours/receiptThanks are markers.
+  const labels = {
+    claim: /^(get|获取|领取)$/i,
+    owned: /^(in library|owned|已在库中|已拥有)$/i,
+    unavailable: /buy|购买|unavailable|不可用|即将|coming/i,
+    wishlistAnchor: /^(wishlist|add to wishlist|加入愿望单|添加至愿望单|願望清單)$/i,
+    fabBuy: /^(buy now|立即购买)$/i,
+    submitOrder: /^(place order|add to library|下单|下订单|加入库|添加到库)$/i,
+    viewInLibrary: /^view in my library$/i,
+    receiptDone: /^(thank you[!.]?|thanks for (your purchase|buying)[!.]?|order complete[!.]?|感谢购买[！!]?|订单完成[！!]?)$/i,
+    receiptAllYours: /\bit['’]s all yours\b/i,
+    receiptThanks: /thanks for your order[.!]?/i,
+    continueBrowsing: /^continue browsing$/i
+  };
+  const api = {fabTier, labels, parsePc, parseMobile, parseFab, fabDetail, applyOwnership, imageUrl, coverUrl, previewUrl, promotionTime, availabilityAt, totalState, zeroTotal, zeroFreeCheckout, fabCheckoutTier, queue};
   if (typeof module !== 'undefined') module.exports = api;
   root.PocketDomain = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

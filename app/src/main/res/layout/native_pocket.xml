@@ -1,0 +1,21 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@color/native_background">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:paddingHorizontal="12dp">
+        <ImageView android:layout_width="40dp" android:layout_height="40dp" android:src="@drawable/native_logo" android:contentDescription="@null" />
+        <TextView style="@style/native_title" android:layout_width="0dp" android:layout_weight="1" android:layout_marginStart="8dp" android:text="@string/native_app_name" android:textSize="18sp" />
+        <Button android:id="@+id/account" style="@style/native_button" android:layout_width="48dp" android:paddingHorizontal="4dp" android:text="@string/native_account" />
+        <Button android:id="@+id/history" style="@style/native_button" android:layout_width="48dp" android:paddingHorizontal="4dp" android:text="@string/native_history" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingHorizontal="12dp">
+        <Button android:id="@+id/tab_pc" style="@style/native_button" android:layout_width="0dp" android:layout_weight="1" android:text="@string/native_pc" />
+        <Button android:id="@+id/tab_android" style="@style/native_button" android:layout_width="0dp" android:layout_weight="1" android:text="@string/native_android" />
+        <Button android:id="@+id/tab_fab" style="@style/native_button" android:layout_width="0dp" android:layout_weight="1" android:text="@string/native_fab" />
+    </LinearLayout>
+    <androidx.recyclerview.widget.RecyclerView android:id="@+id/catalog" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:clipToPadding="false" android:paddingHorizontal="12dp" android:paddingBottom="8dp" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="12dp" android:paddingVertical="4dp" android:background="@color/native_surface">
+        <TextView android:id="@+id/selection" style="@style/native_body" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content">
+            <Button android:id="@+id/claim_all" style="@style/native_primary" android:layout_width="0dp" android:layout_weight="1" android:text="@string/native_claim_all" />
+            <Button android:id="@+id/claim_selected" style="@style/native_button" android:layout_width="0dp" android:layout_weight="1" android:layout_marginStart="8dp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>
