@@ -1,5 +1,7 @@
 package cn.run.freepocket.claim
 
+import kotlin.time.Duration.Companion.seconds
+
 import cn.run.freepocket.ClaimJournal
 import cn.run.freepocket.StoreMessagePolicy
 import cn.run.freepocket.data.PocketBackend
@@ -407,7 +409,7 @@ internal class ClaimCoordinator(
                         if (task.verifyAttempt == 0) {
                             task.verifyAttempt++
                             message = "订单已提交，等待拥有凭证更新…"
-                            verificationDelay = work.launch { delay(3000); if (current(nonce)) requestEpicOwnership(nonce) }
+                            verificationDelay = work.launch { delay(3.seconds); if (current(nonce)) requestEpicOwnership(nonce) }
                             publish()
                             return@launch
                         }

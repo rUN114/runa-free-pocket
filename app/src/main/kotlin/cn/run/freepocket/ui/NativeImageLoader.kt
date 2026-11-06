@@ -3,7 +3,7 @@ package cn.run.freepocket.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
+import androidx.core.net.toUri
 import android.util.LruCache
 import android.view.View
 import android.widget.Button
@@ -54,7 +54,7 @@ internal class NativeImageLoader(context: Context) {
             status.setOnClickListener { bind(image, status, url, description, cover) }
             return
         }
-        val key = Uri.parse(registered).lastPathSegment ?: return
+        val key = registered.toUri().lastPathSegment ?: return
         memory.get(key)?.let { bitmap -> image.setImageBitmap(bitmap); status.visibility = View.GONE; return }
         jobs[image] = scope.launch {
             try {

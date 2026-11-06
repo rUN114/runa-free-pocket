@@ -22,6 +22,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import cn.run.freepocket.R
 import cn.run.freepocket.StoreMessagePolicy
 import org.json.JSONException
@@ -100,7 +101,7 @@ class OfficialBrowserController(
         }
         val previous = request
         if (previous?.id == next.id) {
-            if (previous.script != next.script) installScript(webView!!, next.script)
+            if (previous.script != next.script && !installScript(webView!!, next.script)) return
             request = next
             updateTitle(next)
             return
@@ -108,10 +109,10 @@ class OfficialBrowserController(
         disposePage(clearCache = false)
         request = next
         retried = false
-        val page = createPage(next.id, generation)
+        val page = createPage(next.id, generation) ?: return
         webView = page
         panel.addView(page, LinearLayout.LayoutParams(-1, 0, 1f))
-        installScript(page, next.script)
+        if (!installScript(page, next.script)) return
         updateTitle(next)
         readStatus.start(next.mode, SystemClock.uptimeMillis())
         status.text = readStatus.text
@@ -173,7 +174,7 @@ class OfficialBrowserController(
         network.shutdownNow()
     }
 
-    private fun createPage(id: String, token: Long): WebView {
+    private fun createPage(id: String, token: Long): WebView? {
         val page = WebView(activity)
         page.settings.apply {
             javaScriptEnabled = true
@@ -238,18 +239,26 @@ class OfficialBrowserController(
                 handler.postDelayed({ if (isCurrent(page, id, token)) onRetry() }, 1500)
             }
         }
-        WebViewCompat.addWebMessageListener(page, "PocketStore", StoreMessagePolicy.origins) { _, message, origin, main, reply ->
-            if (!isCurrent(page, id, token) || origin.toString() !in StoreMessagePolicy.origins) return@addWebMessageListener
-            val payload = try {
-                parseWebMessage(message)
-            } catch (_: JSONException) {
-                Log.w("PocketBridge", "Ignored malformed store message")
-                return@addWebMessageListener
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(page, "PocketStore", StoreMessagePolicy.origins) { _, message, origin, main, reply ->
+                if (!isCurrent(page, id, token) || origin.toString() !in StoreMessagePolicy.origins) return@addWebMessageListener
+                val payload = try {
+                    parseWebMessage(message)
+                } catch (_: JSONException) {
+                    Log.w("PocketBridge", "Ignored malformed store message")
+                    return@addWebMessageListener
+                }
+                if (payload.optString("nonce") != id) return@addWebMessageListener
+                onMessage(payload, origin.toString(), main) { response ->
+                    if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) && isCurrent(page, id, token))
+                        reply.postMessage(response.toString())
+                }
             }
-            if (payload.optString("nonce") != id) return@addWebMessageListener
-            onMessage(payload, origin.toString(), main) { response ->
-                if (isCurrent(page, id, token)) reply.postMessage(response.toString())
-            }
+        } else {
+            page.destroy()
+            request = null
+            onFailure(id, activity.getString(R.string.webview_update_message))
+            return null
         }
         return page
     }
@@ -257,9 +266,14 @@ class OfficialBrowserController(
     private fun isCurrent(page: WebView, id: String, token: Long): Boolean =
         !closed && !clearingSession && generation == token && webView === page && request?.id == id
 
-    private fun installScript(page: WebView, source: String?) {
-        scriptHandler?.remove()
-        scriptHandler = source?.let { WebViewCompat.addDocumentStartJavaScript(page, it, StoreMessagePolicy.origins) }
+    private fun installScript(page: WebView, source: String?): Boolean {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            scriptHandler?.remove()
+            scriptHandler = source?.let { WebViewCompat.addDocumentStartJavaScript(page, it, StoreMessagePolicy.origins) }
+            return true
+        }
+        onFailure(checkNotNull(request).id, activity.getString(R.string.webview_update_message))
+        return false
     }
 
     private fun updateTitle(current: BrowserRequest) {
@@ -279,7 +293,7 @@ class OfficialBrowserController(
         readStatus.clear()
         diagnosticDialog?.dismiss()
         diagnosticDialog = null
-        scriptHandler?.remove()
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) scriptHandler?.remove()
         scriptHandler = null
         val old = webView ?: return
         webView = null

@@ -174,7 +174,7 @@ function runPocketTask(task) {
       const current = D.parseFab(await json('/i/blades/free_content_blade'));
       if (!current.some(x => x.id === task.item.id)) { finish('result', {status: 'expired', message: '该素材已不在限时免费活动中'}); return; }
       const buy = buttons(scope).find(b => D.labels.fabBuy.test(label(b)));
-      const freeLabel = /(?:-100%|100% off)/i.test(scope.innerText) && /\bfree\b|免费/i.test(scope.innerText);
+      const freeLabel = /-100%|100% off/i.test(scope.innerText) && /\bfree\b|免费/i.test(scope.innerText);
       if (!buy || !freeLabel) { notice('未能确认当前素材免费；请查看官方页面后手动处理'); return; }
       const license = scope.querySelector('#license-select');
       if (!task.fabTier || !license || !visible(license)) {
@@ -191,7 +191,7 @@ function runPocketTask(task) {
         notice('正在选择 Fab ' + task.fabTier + ' 许可；选择确认后才继续');
         return;
       }
-      if (!/(?:-100%|100% off)/i.test(selectedLicense) || !/\bfree\b|免费/i.test(selectedLicense)) {
+      if (!/-100%|100% off/i.test(selectedLicense) || !/\bfree\b|免费/i.test(selectedLicense)) {
         notice('所选许可档位未明确显示限时免费，未打开结算');
         return;
       }

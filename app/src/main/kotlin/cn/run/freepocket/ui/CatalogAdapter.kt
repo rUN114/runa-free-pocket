@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.DiffUtil
+import androidx.core.view.ViewCompat
 import cn.run.freepocket.R
 import cn.run.freepocket.databinding.NativeCatalogHeaderBinding
 import cn.run.freepocket.databinding.NativeCatalogItemBinding
@@ -162,6 +163,8 @@ internal class CatalogAdapter(
         if (holder is ItemHolder) images.unbind(holder.binding.image)
     }
     private class HeaderHolder(val binding: NativeCatalogHeaderBinding) : RecyclerView.ViewHolder(binding.root)
-    private class SectionHolder(val binding: NativeSectionBinding) : RecyclerView.ViewHolder(binding.root)
+    private class SectionHolder(val binding: NativeSectionBinding) : RecyclerView.ViewHolder(binding.root) {
+        init { ViewCompat.setAccessibilityHeading(binding.root, true) }
+    }
     private class ItemHolder(val binding: NativeCatalogItemBinding) : RecyclerView.ViewHolder(binding.root)
 }

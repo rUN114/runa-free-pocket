@@ -14,6 +14,7 @@ import cn.run.freepocket.web.BrowserRequest
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.ProviderException
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,7 +45,7 @@ internal class PocketViewModel(application: Application) : AndroidViewModel(appl
         initialize()
         viewModelScope.launch {
             while (isActive) {
-                delay(60000)
+                delay(60.seconds)
                 if (visible) {
                     publish()
                     refreshIfDue()
